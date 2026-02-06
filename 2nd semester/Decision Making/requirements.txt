@@ -1,0 +1,17 @@
+notebook
+ipykernel
+jupyterlab
+numpy
+matplotlib
+scipy
+seaborn
+pandas
+pyqt5
+scikit-learn
+torch
+nltk
+apyori
+tqdm
+dtuimldmtools
+pyomo 
+gurobi
