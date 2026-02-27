@@ -4,9 +4,14 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 from pyomo.environ import *
 import gurobipy as grb
+from PlotsRestaurant import *
 from SystemCharacteristics import *
 from Functions import *
 
+# -----------------------------------------------------------------------------
+# 1) Locate input data files
+#    Try current script folder first, then parent folder.
+# -----------------------------------------------------------------------------
 script_dir = Path(__file__).resolve().parent
 required_files = ("OccupancyRoom1.csv", "OccupancyRoom2.csv", "PriceData.csv")
 candidate_dirs = (script_dir, script_dir.parent)
@@ -22,14 +27,21 @@ if data_dir is None:
         f"Could not find required data files {required_files} in {script_dir} or {script_dir.parent}."
     )
 
+# -----------------------------------------------------------------------------
+# 2) Load CSV inputs (occupancy and electricity prices)
+# -----------------------------------------------------------------------------
 Occ_r1 = pd.read_csv(data_dir / "OccupancyRoom1.csv")
 Occ_r2 = pd.read_csv(data_dir / "OccupancyRoom2.csv")
 prices = pd.read_csv(data_dir / "PriceData.csv")
 
+# Ensure hour labels are integer-indexed for consistent dictionary keys.
 Occ_r1.columns = Occ_r1.columns.astype(int)
 Occ_r2.columns = Occ_r2.columns.astype(int)
 prices.columns = prices.columns.astype(int)
 
+# -----------------------------------------------------------------------------
+# 3) Prepare fixed parameters and build time-price lookup dictionary
+# -----------------------------------------------------------------------------
 data_fixed = get_fixed_data()
 prices_dict = {}
 for day_idx, row in prices.iterrows():
@@ -37,10 +49,12 @@ for day_idx, row in prices.iterrows():
         prices_dict[(day_idx, int(hour))] = row[hour]
 
 
-# Create Pyomo model
+# -----------------------------------------------------------------------------
+# 4) Create Pyomo model and index sets
+# -----------------------------------------------------------------------------
 model = ConcreteModel()
 day = 0
-# Sets 
+# Sets
 model.R = Set(initialize=[1, 2])  # Rooms
 model.T = Set(initialize=range(data_fixed['num_timeslots'])) #Time steps
 model.D = Set(initialize=range(Occ_r1.shape[0])) # Days (for occupancy data)
@@ -48,7 +62,10 @@ model.TD = model.T * model.D # Time-Day combinations
 model.RTD = model.R*model.T*model.D # Room-Time-Day combinations
 
 
-#Parameters
+# -----------------------------------------------------------------------------
+# 5) Define model parameters (physical coefficients, limits, and exogenous data)
+# -----------------------------------------------------------------------------
+# Parameters
 model.Pr = Param(initialize=data_fixed['heating_max_power']) # Maximum heating power (kW)
 model.Zexch = Param(initialize=data_fixed['heat_exchange_coeff']) # Heat exchange coefficient between rooms
 model.Zconv = Param(initialize=data_fixed['heating_efficiency_coeff']) # Heating efficiency
@@ -69,8 +86,9 @@ model.Occ1 = Param(model.D, model.T, initialize=Occ_r1.stack().to_dict())
 model.Occ2 = Param(model.D, model.T, initialize=Occ_r2.stack().to_dict())
 model.prices = Param(model.D, model.T, initialize=prices_dict)
 
-print(model.Occ1[0, 0])  # Example: occupancy of room 1 on day 0 at time 0
-
+# -----------------------------------------------------------------------------
+# 6) Define decision variables
+# -----------------------------------------------------------------------------
 # Variables
 model.Vent = Var(model.TD, domain=Binary) # Ventilation ON/OFF
 model.Uon = Var(model.TD, domain=Binary) # Ventilation start-up
@@ -83,38 +101,58 @@ model.y = Var(model.RTD, domain=Binary) # T is higher than Thigh
 model.T_in = Var(model.RTD, domain=NonNegativeReals) # Indoor temperature (°C)
 model.Hum = Var(model.TD, domain=NonNegativeReals) # Indoor humidity (%)
 
-#Adding objective function to the model
+# -----------------------------------------------------------------------------
+# 7) Add objective function (minimize total operating cost)
+# -----------------------------------------------------------------------------
 model.obj = Objective(rule=total_cost_rule, sense=minimize)
 
-#adding constraints to the model
+# -----------------------------------------------------------------------------
+# 8) Add dynamic and logic constraints
+# -----------------------------------------------------------------------------
+# Enforces indoor temperature evolution each hour from heat exchange, losses, heating, ventilation, and occupancy.
 model.Temp_Room_Dynamics = Constraint(model.RTD, rule=room_thermal_balance_rule)
+# Enforces indoor humidity evolution each hour from ventilation removal and occupancy generation.
 model.Hum_Room_Dynamics = Constraint(model.TD, rule=humidity_balance_rule)
 
+# Adds low-temperature control logic (binary activation) that can force heater power up when too cold.
 model.set_max_temp_rule = Block(rule=max_temp_low_rule)
 
+# Adds high-temperature safety logic (binary activation) that can force heater power down/off when too hot.
 model.set_power_off_rule = Block(rule=set_power_off_rule)
 
+# Links high humidity to ventilation start signal through a big-M trigger condition.
 model.vent_on_rule = Constraint(model.TD, rule=set_vent_on_rule)
 
+# Prevents simultaneous ventilation start and stop commands in the same time step.
 model.on_off_limit = Constraint(model.TD, rule=on_off_limit_rule)
 
+# Allows a shut-down command only when ventilation is currently ON.
 model.off_le_e = Constraint(model.TD, rule=off_le_e_rule)
 
+# Allows a start-up command only when ventilation is currently OFF.
 model.on_le_one_minus_e = Constraint(model.TD, rule=on_le_one_minus_e_rule)
 
+# Enforces ventilation inertia by linking current ON state to previous ON state and start-up decision.
 model.vent_inertia_rule = Constraint(model.TD, rule=set_vent_inertia_rule)
 
+# Enforces minimum ON-time (up-time) so ventilation stays active for a minimum duration after start.
 model.min_vent_on = Constraint(model.TD, rule=min_up_time_ventilation_rule)
 
-# 1. Select the solver 
+# -----------------------------------------------------------------------------
+# 9) Select solver and solve optimization problem
+# -----------------------------------------------------------------------------
+# 1. Select the solver
 solver = SolverFactory('gurobi') 
 
 # 2. Solve the model
 results = solver.solve(model, tee=False)
 
+# Export LP model for inspection/debugging.
 model.write("model.lp", io_options={'symbolic_solver_labels': True})
 
-# 3. Check the Termination Condition
+# -----------------------------------------------------------------------------
+# 10) Check solver termination condition and report objective
+# -----------------------------------------------------------------------------
 from pyomo.opt import TerminationCondition
 
 if results.solver.termination_condition == TerminationCondition.optimal:
@@ -124,3 +162,9 @@ elif results.solver.termination_condition == TerminationCondition.infeasible:
     print("Failure: The model is infeasible (the constraints contradict each other).")
 else:
     print(f"Solver Status: {results.solver.termination_condition}")
+
+# -----------------------------------------------------------------------------
+# 11) Visualize optimization results
+# -----------------------------------------------------------------------------
+plot_HVAC_results(model)
+plot_all_days_sequential(model)
