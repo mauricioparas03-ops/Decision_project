@@ -1,5 +1,8 @@
 from matplotlib import axes
 
+#import all the variables from the model and the dataframes
+
+
 T = list(model.T)
 d = 99
 
