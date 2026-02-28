@@ -136,11 +136,11 @@ def set_vent_on_rule(model,t,d):
 def on_off_limit_rule(model, t, d):
     return model.Uon[t, d] + model.Uoff[t, d] <= 1
 
-# Constraint 2: U_off <= e
+# Constraint 2: U_off <= 1 - e
 def off_le_e_rule(model, t, d):
     return model.Uoff[t, d] <=1 - model.Vent[t, d]
 
-# Constraint 3: U_on <= 1 - e
+# Constraint 3: U_on <= e
 def on_le_one_minus_e_rule(model, t, d):
     return model.Uon[t, d] <= model.Vent[t, d]
 
