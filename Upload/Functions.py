@@ -146,8 +146,7 @@ def on_le_one_minus_e_rule(model, t, d):
 
 def set_vent_inertia_rule(model,t,d):
    if t == model.T.first():
-      model.Uon[t, d].fix(0)  # Force Uon to be 0 at the first time step
-      model.Vent[t, d].fix(0)  # Force Vent to be 0 at the first time step
+
       return Constraint.Skip # Skip because there is no previous time step at the first time step
    # Define the previous time step
    t_prev = t - 1
