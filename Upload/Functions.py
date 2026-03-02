@@ -2,7 +2,15 @@ from pyomo.environ import *
 #objective function
 
 def total_cost_rule(model):
-    return sum(model.prices[d, t] * (model.Heat[r, t, d] + model.Vent[t, d] * model.Pvent) for r in model.R for t in model.T for d in model.D)
+    heat_cost = sum(
+        model.prices[d, t] * model.Heat[r, t, d]
+        for r in model.R for t in model.T for d in model.D
+    )
+    vent_cost = sum(
+        model.prices[d, t] * model.Vent[t, d] * model.Pvent
+        for t in model.T for d in model.D
+    )
+    return heat_cost + vent_cost
 
 #constraints
 
@@ -65,6 +73,7 @@ def max_temp_low_rule(block):
     # M is a large constant, larger than any possible temperature difference
     M = 100 
     m = block.model()
+    eps = 0.0001
 
     # Constraint to force u = 1 if T_in <= Tmin
     def u_binary_logic_rule(block, r, t, d):
@@ -73,7 +82,7 @@ def max_temp_low_rule(block):
 
     # Force Heat to Max if w = 1
     def low_temp_heat_rule(block, r, t, d):
-        return m.T_in[r, t, d] >= m.Tok - M * (1 - m.w[r, t, d])
+        return m.T_in[r, t, d] >= m.Tok + eps - M * (1 - m.w[r, t, d])
     block.low_temp_heat = Constraint(m.RTD, rule=low_temp_heat_rule)
 
     # cannot have both u and w active at the same time
@@ -102,26 +111,9 @@ def set_power_off_rule(block):
     m = block.model()
 
 
-    def z_binary_logic_rule(block, r, t, d):
-        return m.T_in[r, t, d] <= m.Tok + M * (1 - m.z[r, t, d])
-    block.z_logic = Constraint(m.RTD, rule=z_binary_logic_rule)
-
     def y_binary_logic_rule(block, r, t, d):
         return m.T_in[r, t, d] <= m.Thigh + M * m.y[r, t, d]
     block.y_logic = Constraint(m.RTD, rule=y_binary_logic_rule)
-
-    def z_y_exclusivity_rule(block, r, t, d):    
-        # Skip the first time step (initial condition)
-        if t == m.T.first():
-            m.z[r, t, d].fix(0)  # Force z to be 0 at the first time step
-            m.y[r, t, d].fix(0)  # Force y to be 0 at the first time step
-            return Constraint.Skip # Skip because initialized conditions are within Tok and Thigh at the first time step
-        
-        # Define the previous time step
-        t_prev = t - 1
-
-        return m.y[r, t, d] >= m.y[r,t_prev, d] - m.z[r, t, d]
-    block.z_y_exclusivity = Constraint(m.RTD, rule=z_y_exclusivity_rule)
 
     def Set_power_off_rule(block, r, t, d):
         return m.Heat[r, t, d] <= m.Pr * (1 - m.y[r, t, d])
@@ -130,59 +122,22 @@ def set_power_off_rule(block):
 # Force Vent ON if Hum >= Hhigh
 def set_vent_on_rule(model,t,d):
     M = 100
-    return model.Hum[t, d] <= model.Hhigh + M * model.Uon[t, d]
-
-#Operational constraints for ventilation system
-def on_off_limit_rule(model, t, d):
-    return model.Uon[t, d] + model.Uoff[t, d] <= 1
-
-# Constraint 2: U_off <= 1 - e
-def off_le_e_rule(model, t, d):
-    return model.Uoff[t, d] <=1 - model.Vent[t, d]
-
-# Constraint 3: U_on <= e
-def on_le_one_minus_e_rule(model, t, d):
-    return model.Uon[t, d] <= model.Vent[t, d]
-
-def set_vent_inertia_rule(model,t,d):
-   if t == model.T.first():
-
-      return Constraint.Skip # Skip because there is no previous time step at the first time step
-   # Define the previous time step
-   t_prev = t - 1
-   return model.Uon[t, d] >= model.Vent[t, d] - model.Vent[t_prev, d]
+    return model.Hum[t, d] <= model.Hhigh + M * model.Vent[t, d]
 
 
 ### check that this funciton is working
 def min_up_time_ventilation_rule(model, t, d):
-    # We can't check 't-1' for the very first hour
-    if t == model.T.first():
-        return Constraint.Skip
-    
     # Define the 'Up-Time' duration
     L = 3 
     
     # If we are too close to the end of the day to look L steps ahead,
     # we adjust the summation range to not exceed the time set.
     remaining_steps = [k for k in range(t, t + L) if k <= model.T.last()]
+    # if t = 0 assume ventilation was off in the previous hour
+    v_prev = model.Vent[t-1, d] if t > model.T.first() else 0
     
     # Logic: Sum of future states >= duration * (Current - Previous)
     return sum(model.Vent[k, d] for k in remaining_steps) >= \
-           len(remaining_steps) * (model.Vent[t, d] - model.Vent[t-1, d])
-
-# Max Temperature when temperature is too low
-def low_to_max_temp_rule(model, t, r, d):
-    if model.T_in[r, t, d] <= model.Tmin:
-        return model.Heat[r, t, d] == model.Pr
-
-# Power off when temperature is too high
-def high_to_zero_temp_rule(model, t, r, d):
-    if model.T_in[r, t, d] >= model.Thigh:
-        return model.Heat[r, t, d] == 0
-    
-# High humidity forces ventilation ON
-def high_humidity_ventilation_rule(model, t, d):
-    if model.Hum[t, d] >= model.Hhigh:
-        return model.Vent[t, d] == 1
+           len(remaining_steps) * (model.Vent[t, d] - v_prev)
 
 

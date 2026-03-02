@@ -3,7 +3,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 from pyomo.environ import *
-import gurobipy as grb
 from PlotsRestaurant import *
 from SystemCharacteristics import *
 from Functions import *
@@ -91,12 +90,9 @@ model.prices = Param(model.D, model.T, initialize=prices_dict)
 # -----------------------------------------------------------------------------
 # Variables
 model.Vent = Var(model.TD, domain=Binary) # Ventilation ON/OFF
-model.Uon = Var(model.TD, domain=Binary) # Ventilation start-up
-model.Uoff = Var(model.TD, domain=Binary) # Ventilation shut-down
 model.Heat = Var(model.RTD, domain=NonNegativeReals, bounds=(0, model.Pr)) # Heating power (kW)
 model.w = Var(model.RTD, domain=Binary) # T is higher thatn Tok
 model.u = Var(model.RTD, domain=Binary) # T is lower than Tlow
-model.z = Var(model.RTD, domain=Binary) # T is lower than Tok
 model.y = Var(model.RTD, domain=Binary) # T is higher than Thigh
 model.T_in = Var(model.RTD, domain=NonNegativeReals) # Indoor temperature (°C)
 model.Hum = Var(model.TD, domain=NonNegativeReals) # Indoor humidity (%)
@@ -123,18 +119,6 @@ model.set_power_off_rule = Block(rule=set_power_off_rule)
 # Links high humidity to ventilation start signal through a big-M trigger condition.
 model.vent_on_rule = Constraint(model.TD, rule=set_vent_on_rule)
 
-# Prevents simultaneous ventilation start and stop commands in the same time step.
-model.on_off_limit = Constraint(model.TD, rule=on_off_limit_rule)
-
-# Allows a shut-down command only when ventilation is currently ON.
-model.off_le_e = Constraint(model.TD, rule=off_le_e_rule)
-
-# Allows a start-up command only when ventilation is currently OFF.
-model.on_le_one_minus_e = Constraint(model.TD, rule=on_le_one_minus_e_rule)
-
-# Enforces ventilation inertia by linking current ON state to previous ON state and start-up decision.
-model.vent_inertia_rule = Constraint(model.TD, rule=set_vent_inertia_rule)
-
 # Enforces minimum ON-time (up-time) so ventilation stays active for a minimum duration after start.
 model.min_vent_on = Constraint(model.TD, rule=min_up_time_ventilation_rule)
 
@@ -156,7 +140,12 @@ model.write("model.lp", io_options={'symbolic_solver_labels': True})
 from pyomo.opt import TerminationCondition
 
 if results.solver.termination_condition == TerminationCondition.optimal:
-    print(value(model.obj))
+    total_cost = value(model.obj)
+    num_days = len(list(model.D))
+    avg_daily_cost = total_cost / num_days if num_days > 0 else float("nan")
+
+    print(f"{'Total Cost:':<40} {total_cost:,.2f} DKK")
+    print(f"{'Average Daily Cost:':<40} {avg_daily_cost:.2f} DKK")
 
 elif results.solver.termination_condition == TerminationCondition.infeasible:
     print("Failure: The model is infeasible (the constraints contradict each other).")
@@ -167,4 +156,3 @@ else:
 # 11) Visualize optimization results
 # -----------------------------------------------------------------------------
 plot_HVAC_results(model)
-plot_all_days_sequential(model)
