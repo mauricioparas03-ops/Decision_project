@@ -1,26 +1,22 @@
-from matplotlib import axes
-
-#import all the variables from the model and the dataframes
-
-
-T = list(model.T)
-d = 99
-
-HVAC_results = {
-    "T": T,
-    "Temp_r1": [value(model.T_in[1, t, d]) for t in T],
-    "Temp_r2": [value(model.T_in[2, t, d]) for t in T],
-    "h_r1": [value(model.Heat[1, t, d]) for t in T],
-    "h_r2": [value(model.Heat[2, t, d]) for t in T],
-    "v": [value(model.Vent[t, d]) for t in T],
-    "Hum": [value(model.Hum[t, d]) for t in T],
-    "price": [value(model.prices[d, t]) for t in T],
-    "Occ_r1": [Occ_r1.iloc[d, t] for t in T],
-    "Occ_r2": [Occ_r2.iloc[d, t] for t in T],
-}
-
-def plot_HVAC_results(HVAC_results):
+def plot_HVAC_results(model, day=None):
     import matplotlib.pyplot as plt
+    from pyomo.environ import value
+
+    T = list(model.T)
+    d = list(model.D)[0] if day is None else day
+
+    HVAC_results = {
+        "T": T,
+        "Temp_r1": [value(model.T_in[1, t, d]) for t in T],
+        "Temp_r2": [value(model.T_in[2, t, d]) for t in T],
+        "h_r1": [value(model.Heat[1, t, d]) for t in T],
+        "h_r2": [value(model.Heat[2, t, d]) for t in T],
+        "v": [value(model.Vent[t, d]) for t in T],
+        "Hum": [value(model.Hum[t, d]) for t in T],
+        "price": [value(model.prices[d, t]) for t in T],
+        "Occ_r1": [value(model.Occ1[d, t]) for t in T],
+        "Occ_r2": [value(model.Occ2[d, t]) for t in T],
+    }
     T = HVAC_results["T"]   
     
     
@@ -85,5 +81,3 @@ def plot_HVAC_results(HVAC_results):
     
     plt.tight_layout()
     plt.show()
-
-    plot_HVAC_results(HVAC_results)
