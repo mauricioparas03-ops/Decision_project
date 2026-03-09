@@ -1,4 +1,4 @@
-Restaurant_models.py
+#Restaurant_models.py
 
 """
 This module contains the data and model-building code for the restaurant SP policy.
@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+
 from pyomo.environ import (
     ConcreteModel, Set, Param, Var, Objective, Constraint, Block,
     SolverFactory, NonNegativeReals, minimize, Binary, value
@@ -18,8 +19,11 @@ from pyomo.opt import TerminationCondition
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 
+_rng = np.random.default_rng(seed=42)
+
 class Restaurant_models:
     ## - Fixed data characteristics -----------------------------
+    @staticmethod
     def get_fixed_data():
         """
         Returns the fixed system characteristics.
@@ -56,6 +60,7 @@ class Restaurant_models:
     # Look ahead functions: 
 
     # ── Electricity price process  ──────────────────────────────────────────────
+    @staticmethod
     def price_model(current_price, previous_price, rng=None):
         """
         One-step-ahead price sample.
@@ -94,6 +99,7 @@ class Restaurant_models:
 
 
     # ── Occupancy process (coupled mean-reverting, one room per step) ─────────────
+    @staticmethod
     def next_occupancy_levels(r1_current, r2_current, rng=None):
         """
         One-step-ahead occupancy sample for both rooms.
@@ -125,7 +131,7 @@ class Restaurant_models:
     
     #----------------------------------------------------------------------------------------------------------
     # Scenario Generation:
-
+    @staticmethod
     def generate_scenarios(price_now, price_prev,
                         occ_r1_now, occ_r2_now,
                         horizon, n_scenarios, rng):
@@ -163,11 +169,11 @@ class Restaurant_models:
 
 
     # ── Scenario Clustering ───────────────────────────────────────────────
-
+    @staticmethod
     def cluster_scenarios(price_dict, occ_dict, n_clusters, horizon, scenarios_to_generate):
         
         scaler = StandardScaler()
-        kmeans = KMeans(n_clusters=n_clusters, random_state=0)
+        #kmeans = KMeans(n_clusters=n_clusters, random_state=0)
         #horizon = DATA['num_timeslots']
 
         X = np.array([
@@ -205,7 +211,7 @@ class Restaurant_models:
         return price_dict_clus, occ_dict_clus, hum_occ_dict_clus, probabilities, X, labels, centroids
     
     # Building the SP model --------------------------------------------------------------------------------
-
+    @staticmethod
     def build_sp_model(current_state, price_dict, occ_dict, hum_occ_dict,
                    horizon, n_scenarios, probabilities):
         """
@@ -314,7 +320,7 @@ class Restaurant_models:
         # ── Overrule controller: LOW temperature ──────────────────────────────────
         # u[r,t,s] = 1  iff  overrule is active (T < T_low or still recovering)
         # w[r,t,s] = 1  iff  T has reached T_OK this step (deactivates overrule)
-
+        
         def u_activation(m, r, t, s):
             # T_in >= T_low - M*u  →  u forced to 1 when T < T_low
             return m.T_in[r, t, s] >= m.Tmin - M * m.u[r, t, s]
@@ -340,16 +346,19 @@ class Restaurant_models:
         m.HeatMaxOverrule = Constraint(m.RTS, rule=heat_max_when_overrule)
 
         # ── Overrule controller: HIGH temperature ─────────────────────────────────
+       
         def y_activation(m, r, t, s):
             # T_in <= T_high + M*y  →  y forced to 1 when T > T_high
             return m.T_in[r, t, s] <= m.Thigh + M * m.y[r, t, s]
         m.YActivation = Constraint(m.RTS, rule=y_activation)
+
 
         def heat_off_when_overrule(m, r, t, s):
             # y = 1  →  Heat = 0
             return m.Heat[r, t, s] <= m.Pr * (1 - m.y[r, t, s])
         m.HeatOffOverrule = Constraint(m.RTS, rule=heat_off_when_overrule)
 
+        
         # ── Humidity overrule: force ventilation ON ───────────────────────────────
         def vent_humidity_overrule(m, t, s):
             # Hum <= H_high + M*v  →  v forced to 1 when Hum > H_high
@@ -391,7 +400,7 @@ class Restaurant_models:
                 return Constraint.Skip
             return m.Heat[r, 0, s1] == m.Heat[r, 0, s2]
         m.HeatNA = Constraint(m.R, m.S, m.S, rule=heat_na)
-
+    
         def vent_na(m, s1, s2):
             if s1 >= s2:
                 return Constraint.Skip
@@ -413,3 +422,189 @@ class Restaurant_models:
         m.obj = Objective(rule=objective, sense=minimize)
 
         return m
+    
+    # Apply Dynamics to get next state from first-stage decisions
+    @staticmethod
+    def apply_dynamics(state, decisions):
+        """
+        Advance the real system state by one timestep.
+
+        Parameters
+        ----------
+        state : dict with keys
+            T_in_r1       – room 1 temperature (°C)
+            T_in_r2       – room 2 temperature (°C)
+            humidity      – humidity level (%)
+            vent_prev     – ventilation status at current t (0 or 1)
+            vent_on_count – consecutive hours ventilation has been ON
+            t             – current hour index (0-based)
+            occ_r1        – room 1 occupancy at current t
+            occ_r2        – room 2 occupancy at current t
+
+        decisions : dict with keys
+            p1  – heating power room 1 (kW)
+            p2  – heating power room 2 (kW)
+            v   – ventilation (0 or 1)
+
+        Returns
+        -------
+        next_state : dict with same keys as state, advanced by one step.
+                    occ_r1 and occ_r2 are set to None — filled by environment.
+        """
+        d    = Restaurant_models.get_fixed_data()
+        t    = state['t']
+        p1   = decisions['p1']
+        p2   = decisions['p2']
+        v    = decisions['v']
+        o1   = state['occ_r1']
+        o2   = state['occ_r2']
+        T1   = state['T_in_r1']
+        T2   = state['T_in_r2']
+        H    = state['humidity']
+        Tout = d['outdoor_temperature'][t]
+
+        # ── Temperature dynamics ──────────────────────────────────────────────────
+        T1_next = (T1
+                + d['heat_exchange_coeff']      * (T2   - T1)
+                + d['thermal_loss_coeff']       * (Tout - T1)
+                + d['heating_efficiency_coeff'] * p1
+                - d['heat_vent_coeff']          * v
+                + d['heat_occupancy_coeff']     * o1)
+
+        T2_next = (T2
+                + d['heat_exchange_coeff']      * (T1   - T2)
+                + d['thermal_loss_coeff']       * (Tout - T2)
+                + d['heating_efficiency_coeff'] * p2
+                - d['heat_vent_coeff']          * v
+                + d['heat_occupancy_coeff']     * o2)
+
+        # ── Humidity dynamics ─────────────────────────────────────────────────────
+        H_next = max(0.0,
+                    H
+                    - d['humidity_vent_coeff']      * v
+                    + d['humidity_occupancy_coeff'] * (o1 + o2))
+
+        # ── Ventilation inertia counter ───────────────────────────────────────────
+        if v == 1 and state['vent_prev'] == 0:
+            vent_on_count_next = 1
+        elif v == 1:
+            vent_on_count_next = min(state['vent_on_count'] + 1, 3)
+        else:
+            vent_on_count_next = 0
+
+        return {
+            'T_in_r1'      : T1_next,
+            'T_in_r2'      : T2_next,
+            'humidity'     : H_next,
+            'vent_prev'    : v,
+            'vent_on_count': vent_on_count_next,
+            't'            : t + 1,
+            'occ_r1'       : None,   # filled by environment at next step
+            'occ_r2'       : None,   # filled by environment at next step
+        }
+    
+    @staticmethod
+    def SP_policy(t, T_in, humidity, vent_status, vent_on_count,
+              price_now, price_prev, occ_r1, occ_r2):
+        """
+        2-stage stochastic programming policy.
+
+        Stage 1 (here-and-now) : single action committed at t=0,
+                                identical across all scenarios
+                                (enforced by non-anticipativity).
+        Stage 2 (wait-and-see) : scenarios diverge freely from t=1
+                                onward — used only to inform the
+                                stage 1 decision, never executed.
+
+        Design choices
+        --------------
+        Lookahead horizon  : H = 6 steps
+        Raw scenarios      : 100 Monte Carlo samples
+        Reduced scenarios  : 20 centroids via K-Means (p_ω = N_ω / 100)
+        Non-anticipativity : enforced at t=0 only (scenario fan)
+        Solver             : Gurobi, TimeLimit=12s, MIPGap=2%
+        """
+        d           = Restaurant_models.get_fixed_data()
+        HORIZON     = 6
+        N_RAW       = 100
+        N_CLUSTERS  = 20
+       # _rng        = np.random.default_rng(seed=42)
+
+        # How many lookahead steps remain today
+        remaining = d['num_timeslots'] - t
+        horizon   = min(HORIZON, remaining)
+
+        if horizon <= 0:
+            return 0.0, 0.0, 0
+
+        # Handle missing previous price at t=0
+        if price_prev is None:
+            price_prev = price_now
+
+        # ── 1. Generate raw scenarios from current observed state ─────────────────
+        price_dict, occ_dict, hum_occ_dict = Restaurant_models.generate_scenarios(
+            price_now   = price_now,
+            price_prev  = price_prev,
+            occ_r1_now  = occ_r1,
+            occ_r2_now  = occ_r2,
+            horizon     = horizon,
+            n_scenarios = N_RAW,
+            rng         = _rng,
+        )
+
+        # ── 2. Cluster down to N_CLUSTERS representative scenarios ────────────────
+        price_dict_clus, occ_dict_clus, hum_occ_dict_clus, probabilities, _, _, _ = \
+            Restaurant_models.cluster_scenarios(
+                price_dict         = price_dict,
+                occ_dict           = occ_dict,
+                n_clusters         = N_CLUSTERS,
+                horizon            = horizon,
+                scenarios_to_generate = N_RAW,
+            )
+
+        # ── 3. Bundle current observed state ─────────────────────────────────────
+        current_state = {
+            'T_in_r1'      : T_in[0],
+            'T_in_r2'      : T_in[1],
+            'humidity'     : humidity,
+            'vent_prev'    : int(vent_status),
+            'vent_on_count': int(vent_on_count),
+        }
+
+        # ── 4. Build and solve the stochastic MILP ────────────────────────────────
+        model  = Restaurant_models.build_sp_model(
+            current_state  = current_state,
+            price_dict     = price_dict_clus,
+            occ_dict       = occ_dict_clus,
+            hum_occ_dict   = hum_occ_dict_clus,
+            horizon        = horizon,
+            n_scenarios    = N_CLUSTERS,
+            probabilities  = probabilities,
+        )
+
+        solver = SolverFactory('gurobi')
+        solver.options['TimeLimit'] = 12
+        solver.options['MIPGap']    = 0.02
+        solver.solve(model, tee=False)
+
+        # ── 5. Extract here-and-now decisions (all scenarios agree at t=0) ────────
+        s0  = 0
+        p1  = float(value(model.Heat[1, 0, s0]))
+        p2  = float(value(model.Heat[2, 0, s0]))
+        v   = int(round(float(value(model.Vent[0, s0]))))
+
+        # Clip to feasible bounds
+        pr_max = d['heating_max_power']
+        p1 = float(np.clip(p1, 0.0, pr_max))
+        p2 = float(np.clip(p2, 0.0, pr_max))
+        v  = int(np.clip(v,  0,   1))
+
+        return p1, p2, v
+    
+
+def SP_policy(t, T_in, humidity, vent_status, vent_on_count,
+              price_now, price_prev, occ_r1, occ_r2):
+    return Restaurant_models.SP_policy(
+        t, T_in, humidity, vent_status, vent_on_count,
+        price_now, price_prev, occ_r1, occ_r2
+    )
