@@ -1,6 +1,10 @@
 from Checks import check_and_sanitize_action
-from Classes import RestaurantValidator
+from EnvFunctions import *
 from Policies import Policies
+
+policy = #put here my policy
+power_max = {1: 3, 2:3}
+
 for t in range(1, 100):
     init_state = {
         "T1": ..., #Temperature of room 1
@@ -15,8 +19,10 @@ for t in range(1, 100):
         "low_override_r2": ..., #Is the low-temperature overrule controller of room 2 active 
         "current_time": ... #What is the hour of the day
     }
-    dummy_decision = RestaurantValidator.get_dummy_action(init_state, data['demand_schedule'][t], data)
-    state = RestaurantValidator.apply_dynamics(init_state, dummy_decision, data)
+    if t == 1:
+        state = init_state
+    else:
+        state = next_state
 
     decision = Policies.select_action(state)
 
@@ -24,7 +30,7 @@ for t in range(1, 100):
     feasible_decision = check_and_sanitize_action(policy, state, power_max)
 
 
-    cost = RestaurantValidator.cost_function(decision, state['lambda_grid'])
+    cost = cost_function(feasible_decision, state["price_t"])
 
-    next_state = RestaurantValidator.apply_dynamics(state, decision, data) 
+    next_state = apply_dynamics(state, feasible_decision)
     
