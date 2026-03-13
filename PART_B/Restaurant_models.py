@@ -501,11 +501,11 @@ class Restaurant_models:
             't'            : t + 1,
             'occ_r1'       : None,   # filled by environment at next step
             'occ_r2'       : None,   # filled by environment at next step
-        }
+        } #returns next_state dictionary
     
     @staticmethod
     def SP_policy(t, T_in, humidity, vent_status, vent_on_count,
-              price_now, price_prev, occ_r1, occ_r2):
+              price_now, price_prev, occ_r1, occ_r2):            # add information needed for function into "state" dictionary 
         """
         2-stage stochastic programming policy.
 
@@ -599,7 +599,7 @@ class Restaurant_models:
         p2 = float(np.clip(p2, 0.0, pr_max))
         v  = int(np.clip(v,  0,   1))
 
-        return p1, p2, v
+        return p1, p2, v  #we need to return the decision in a dictionary "decisions"
     
 
 def SP_policy(t, T_in, humidity, vent_status, vent_on_count,
