@@ -1,91 +1,115 @@
-from SystemCharacteristics import get_fixed_data
-    
-def apply_dynamics(self, state, action, data):
+from Data.PriceProcessRestaurant import price_model 
+from Data.OccupancyProcessRestaurant import next_occupancy_levels
+
+def apply_dynamics(state, decisions, data):
     """
     Advance the real system state by one timestep.
 
     Parameters
     ----------
     state : dict with keys
-        T_in_r1       – room 1 temperature (°C)
-        T_in_r2       – room 2 temperature (°C)
-        humidity      – humidity level (%)
-        vent_prev     – ventilation status at current t (0 or 1)
-        vent_on_count – consecutive hours ventilation has been ON
-        t             – current hour index (0-based)
-        occ_r1        – room 1 occupancy at current t
-        occ_r2        – room 2 occupancy at current t
+        T1, T2, H, Occ1, Occ2, price_t, price_previous,
+        vent_counter, low_override_r1, low_override_r2, current_time
 
     decisions : dict with keys
-        p1  – heating power room 1 (kW)
-        p2  – heating power room 2 (kW)
-        v   – ventilation (0 or 1)
+        HeatPowerRoom1, HeatPowerRoom2, VentilationON
 
     Returns
     -------
-    next_state : dict with same keys as state, advanced by one step.
-                occ_r1 and occ_r2 are set to None — filled by environment.
+    next_state : dict with same structure as init_state in Environment.py.
     """
-    d    = get_fixed_data()
-    t    = state['t']
-    p1   = decisions[0]
-    p2   = decisions[1]
-    v    = decisions[2]
-    o1   = gen_data[1][t]
-    o2   = gen_data[2][t]
-    T1   = state['T_in_r1']
-    T2   = state['T_in_r2']
-    H    = state['humidity']
-    Tout = d['outdoor_temperature'][t]
+    t = int(state['current_time'])
+    t_idx = max(0, min(t, len(data['outdoor_temperature']) - 1))
+
+    p1 = float(decisions['HeatPowerRoom1'])
+    p2 = float(decisions['HeatPowerRoom2'])
+    v = int(decisions['VentilationON'])
+
+    o1 = float(state['Occ1'])
+    o2 = float(state['Occ2'])
+    T1 = float(state['T1'])
+    T2 = float(state['T2'])
+    H = float(state['H'])
+    Tout = data['outdoor_temperature'][t_idx]
+
+    heat_exchange = data['heat_exchange_coeff']
+    thermal_loss = data['thermal_loss_coeff']
+    heating_eff = data['heating_efficiency_coeff']
+    vent_cooling = data['heat_vent_coeff']
+    occ_heat = data['heat_occupancy_coeff']
+    humidity_vent = data['humidity_vent_coeff']
+    humidity_occ = data['humidity_occupancy_coeff']
 
     # ── Temperature dynamics ──────────────────────────────────────────────────
     T1_next = (T1
-            + d['heat_exchange_coeff']      * (T2   - T1)
-            + d['thermal_loss_coeff']       * (Tout - T1)
-            + d['heating_efficiency_coeff'] * p1
-            - d['heat_vent_coeff']          * v
-            + d['heat_occupancy_coeff']     * o1)
+            + heat_exchange * (T2   - T1)
+            + thermal_loss  * (Tout - T1)
+            + heating_eff   * p1
+            - vent_cooling  * v
+            + occ_heat      * o1)
 
     T2_next = (T2
-            + d['heat_exchange_coeff']      * (T1   - T2)
-            + d['thermal_loss_coeff']       * (Tout - T2)
-            + d['heating_efficiency_coeff'] * p2
-            - d['heat_vent_coeff']          * v
-            + d['heat_occupancy_coeff']     * o2)
+            + heat_exchange * (T1   - T2)
+            + thermal_loss  * (Tout - T2)
+            + heating_eff   * p2
+            - vent_cooling  * v
+            + occ_heat      * o2)
 
     # ── Humidity dynamics ─────────────────────────────────────────────────────
     H_next = max(0.0,
                 H
-                - d['humidity_vent_coeff']      * v
-                + d['humidity_occupancy_coeff'] * (o1 + o2))
+                - humidity_vent * v
+                + humidity_occ  * (o1 + o2))
 
     # ── Ventilation inertia counter ───────────────────────────────────────────
-    if v == 1 and state['vent_status'] == 0:
-        vent_on_count_next = 1
+    if v == 1 and state['vent_counter'] == 0:
+        vent_counter_next = 1
     elif v == 1:
-        vent_on_count_next = min(state['vent_on_count'] + 1, 3)
+        vent_counter_next = min(state['vent_counter'] + 1, int(data.get('vent_min_up_time', 3)))
     else:
-        vent_on_count_next = 0 
+        vent_counter_next = 0
 
+    # ── Low-temperature hysteresis update ───────────────────────────────────────────────
+    temp_min = data['temp_min_comfort_threshold']
+    temp_ok = data['temp_OK_threshold']
+
+    if T1 <= temp_min:
+        low_override_r1_next = 1
+    elif T1 <= temp_ok and state['low_override_r1'] == 1:
+        low_override_r1_next = 1
+    else:
+        low_override_r1_next = 0
+    
+    if T2 <= temp_min:
+        low_override_r2_next = 1
+    elif T2 <= temp_ok and state['low_override_r2'] == 1:
+        low_override_r2_next = 1
+    else:
+        low_override_r2_next = 0
+
+    occ1_next, occ2_next = next_occupancy_levels(o1, o2)
+    price_next = price_model(state['price_t'], state['price_previous'])
+    
+    
     return {
-        'T_in_r1'      : T1_next,
-        'T_in_r2'      : T2_next,
-        'humidity'     : H_next,
-        'vent_status'    : v,
-        'vent_on_count': vent_on_count_next,
-        't'            : t + 1,
-        'occ_r1'       : None,   # filled by environment at next step
-        'occ_r2'       : None,   # filled by environment at next step
-        'price_now'    : None,
-        'price_prev'   : state['price_now'],  # for next step's scenario generation
-    } #returns next_state dictionary
-    return next_state
-def cost_function(decisions, state):
-    params = get_fixed_data()
-
-    ventilation_power = params["ventilation_power"]
-    cost = state["price_t"] * (ventilation_power * decisions["v"] + decisions["p1"] + decisions["p2"])
-    return cost
+        'T1': T1_next,
+        'T2': T2_next,
+        'H': H_next,
+        'Occ1': occ1_next,
+        'Occ2': occ2_next,
+        'price_t': price_next,
+        'price_previous': state['price_t'],
+        'vent_counter': vent_counter_next,
+        'low_override_r1': low_override_r1_next,
+        'low_override_r2': low_override_r2_next,
+        'current_time': t + 1,
+    }
+def cost_function(decision, state, ventilation_power):
+    return state["price_t"] * (
+        ventilation_power * decision["VentilationON"]
+        + decision["HeatPowerRoom1"]
+        + decision["HeatPowerRoom2"]
+    )
 
 def check_feasibility(decisions, power_max):
     p1 = decisions["HeatPowerRoom1"]
