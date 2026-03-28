@@ -1,3 +1,6 @@
+from xml.parsers.expat import model
+
+from numpy import block
 from pyomo.environ import *
 
 _data_fixed = None
@@ -65,20 +68,27 @@ def solve_daily_milp():
     model.Thigh = Param(initialize=_data_fixed['temp_max_comfort_threshold'])
     model.Hhigh = Param(initialize=_data_fixed['humidity_threshold'])
 
-    model.Tinitial = Param(initialize=_data_fixed['initial_temperature'])
-    model.Hinitial = Param(initialize=_data_fixed['initial_humidity'])
+    model.Tinitial = Param(initialize=_data_fixed['T1'])  # Initial temperature (same for both rooms)
+    model.Hinitial = Param(initialize=_data_fixed['H'])  # Initial humidity
 
     # DECISION VARIABLES
     model.Vent = Var(model.T, domain=Binary)
+    model.s = Var(model.T, domain=Binary)  # startuo ventilation
     model.Heat = Var(model.RT, domain=NonNegativeReals, bounds=(0, model.Pr))
 
-    model.w = Var(model.RT, domain=Binary)
+    # sensor variables for overrules
+    model.y_low = Var(model.RT, domain=Binary)
+    model.y_ok = Var(model.RT, domain=Binary)
+    model.y_high = Var(model.RT, domain=Binary)
+
+    # Memory for overrules
     model.u = Var(model.RT, domain=Binary)
-    model.y = Var(model.RT, domain=Binary)
 
     model.T_in = Var(model.RT, domain=NonNegativeReals)
     model.Hum = Var(model.T, domain=NonNegativeReals)
 
+
+    # OBJECTIVE 
     def total_cost_rule(model):
         heat_cost = sum(model.Prices[t] * model.Heat[r, t] for r in model.R for t in model.T)
         vent_cost = sum(model.Prices[t] * model.Vent[t] * model.Pvent for t in model.T)
@@ -86,6 +96,8 @@ def solve_daily_milp():
 
     model.obj = Objective(rule=total_cost_rule, sense=minimize)
 
+
+    # DYNAMICS 
     def room_thermal_balance_rule(model, r, t):
         if t == model.T.first():
             return model.T_in[r, t] == model.Tinitial
@@ -118,67 +130,97 @@ def solve_daily_milp():
 
     model.Hum_Room_Dynamics = Constraint(model.T, rule=humidity_balance_rule)
 
-    def max_temp_low_rule(block):
-        M = 100
-        m_ref = block.model()
-        eps = 0.0001
 
-        def u_binary_logic_rule(block, r, t):
-            return m_ref.T_in[r, t] >= m_ref.Tmin - M * m_ref.u[r, t]
+    # CONSTRAINTS
+    M_temp = 100
+    M_hum = 100
+    U_vent = 3
 
-        block.u_logic = Constraint(m_ref.RT, rule=u_binary_logic_rule)
+    # Temperature over high threshold
+    def t_high_rule1(m, r, t): 
+        return m.T_in[r,t] >= m.Thigh - M_temp*(1 - m.y_high[r,t])
+    model.c_thigh1 = Constraint(model.RT, rule=t_high_rule1)
 
-        def low_temp_heat_rule(block, r, t):
-            return m_ref.T_in[r, t] >= m_ref.Tok + eps - M * (1 - m_ref.w[r, t])
+    def t_high_rule2(m, r, t): 
+        return m.T_in[r,t] <= m.Thigh + M_temp*m.y_high[r,t]
+    model.c_thigh2 = Constraint(model.RT, rule=t_high_rule2)
 
-        block.low_temp_heat = Constraint(m_ref.RT, rule=low_temp_heat_rule)
+    #Overrule to turn off heating
+    def heat_off_rule(m, r, t): 
+        return m.Heat[r,t] <= m.Pr*(1 - m.y_high[r,t])
+    model.c_heat_off = Constraint(model.RT, rule=heat_off_rule)
 
-        def u_w_exclusivity_rule(block, r, t):
-            if t == m_ref.T.first():
-                m_ref.u[r, t].fix(0)
-                m_ref.w[r, t].fix(0)
-                return Constraint.Skip
-            return m_ref.u[r, t] >= m_ref.u[r, t - 1] - m_ref.w[r, t]
+    #temperature under low threshold
+    def t_low_rule1(m, r, t): 
+        return m.T_in[r,t] <= m.Tmin + M_temp*(1 - m.y_low[r,t])
+    model.c_tlow1 = Constraint(model.RT, rule=t_low_rule1)
 
-        block.u_w_exclusivity = Constraint(m_ref.RT, rule=u_w_exclusivity_rule)
+    def t_low_rule2(m, r, t): 
+        return m.T_in[r,t] >= m.Tmin - M_temp*m.y_low[r,t]
+    model.c_tlow2 = Constraint(model.RT, rule=t_low_rule2)
 
-        def set_max_power_rule(block, r, t):
-            return m_ref.Heat[r, t] >= m_ref.Pr * m_ref.u[r, t]
+    #Temperature over OK threshold
+    def t_ok_rule1(m, r, t): 
+        return m.T_in[r,t] >= m.Tok - M_temp*(1 - m.y_ok[r,t])
+    model.c_tok1 = Constraint(model.RT, rule=t_ok_rule1)
 
-        block.set_max_power = Constraint(m_ref.RT, rule=set_max_power_rule)
+    def t_ok_rule2(m, r, t): 
+        return m.T_in[r,t] <= m.Tok + M_temp*m.y_ok[r,t]
+    model.c_tok2 = Constraint(model.RT, rule=t_ok_rule2)
 
-    model.set_max_temp_rule = Block(rule=max_temp_low_rule)
+    #Overrule control logic
+    def u_rule1(m, r, t): 
+        return m.u[r,t] >= m.y_low[r,t]
+    model.c_u1 = Constraint(model.RT, rule=u_rule1)
 
-    def set_power_off_rule(block):
-        M = 100
-        m_ref = block.model()
+    def u_rule2(m, r, t):
+        u_prev = m.u[r,t-1] if t > m.T.first() else 0
+        return m.u[r,t] <= u_prev + m.y_low[r,t]
+    model.c_u2 = Constraint(model.RT, rule=u_rule2)
 
-        def y_binary_logic_rule(block, r, t):
-            return m_ref.T_in[r, t] <= m_ref.Thigh + M * m_ref.y[r, t]
+    def heat_max_rule(m, r, t): 
+        return m.Heat[r,t] >= m.Pr * m.u[r,t]
+    model.c_heat_max = Constraint(model.RT, rule=heat_max_rule)
 
-        block.y_logic = Constraint(m_ref.RT, rule=y_binary_logic_rule)
+    def u_rule3(m, r, t):
+        u_prev = m.u[r,t-1] if t > m.T.first() else 0
+        return m.u[r,t] >= u_prev - m.y_ok[r,t]
+    model.c_u3 = Constraint(model.RT, rule=u_rule3)
 
-        def power_off_rule(block, r, t):
-            return m_ref.Heat[r, t] <= m_ref.Pr * (1 - m_ref.y[r, t])
+    def u_rule4(m, r, t):
+        return m.u[r,t] <= 1 - m.y_ok[r,t]
+    model.c_u4 = Constraint(model.RT, rule=u_rule4)
 
-        block.set_power_off = Constraint(m_ref.RT, rule=power_off_rule)
+    # Ventilation Startup and Minimum Up-Time
+    def s_rule1(m, t):
+        v_prev = m.Vent[t-1] if t > m.T.first() else 0
+        return m.s[t] >= m.Vent[t] - v_prev
+    model.c_s1 = Constraint(model.T, rule=s_rule1)
 
-    model.set_power_off_rule = Block(rule=set_power_off_rule)
+    def s_rule2(m, t): 
+        return m.s[t] <= m.Vent[t]
+    model.c_s2 = Constraint(model.T, rule=s_rule2)
 
-    def set_vent_on_rule(model, t):
-        M = 100
-        return model.Hum[t] <= model.Hhigh + M * model.Vent[t]
+    def s_rule3(m, t):
+        v_prev = m.Vent[t-1] if t > m.T.first() else 0
+        return m.s[t] <= 1 - v_prev
+    model.c_s3 = Constraint(model.T, rule=s_rule3)
 
-    model.vent_on_rule = Constraint(model.T, rule=set_vent_on_rule)
-
-    def min_up_time_ventilation_rule(model, t):
-        L = 3
-        remaining_steps = [k for k in range(t, t + L) if k <= model.T.last()]
-        v_prev = model.Vent[t - 1] if t > model.T.first() else 0
-        return sum(model.Vent[k] for k in remaining_steps) >= len(remaining_steps) * (model.Vent[t] - v_prev)
-
+    def min_up_time_ventilation_rule(m, t):
+        L_total = len(m.T)
+        end_idx = min(t + U_vent - 1, L_total - 1)
+        sum_vent = sum(m.Vent[tau] for tau in range(t, end_idx + 1))
+        min_val = min(U_vent, L_total - t)
+        return sum_vent >= min_val * m.s[t]
     model.min_vent_on = Constraint(model.T, rule=min_up_time_ventilation_rule)
 
+    #ventilation fored by humidity
+    def hum_rule(m, t): 
+        return m.Hum[t] <= m.Hhigh + M_hum * m.Vent[t]
+    model.c_hum = Constraint(model.T, rule=hum_rule)
+
+
+    # SOLVER
     solver = SolverFactory('gurobi')
     solver.solve(model, tee=False)
 
@@ -194,7 +236,7 @@ def select_action(state):
     """
     Decision rule called by the environment at every hour t.
     """
-    current_t = state["current_time"]
+    current_t = int(state["current_time"])
 
     if current_t == 0 and not _is_solved:
         solve_daily_milp()
@@ -202,7 +244,7 @@ def select_action(state):
     HereAndNowActions = {
         "HeatPowerRoom1": float(_p1_opt[current_t]),
         "HeatPowerRoom2": float(_p2_opt[current_t]),
-        "Ventilation": int(_v_opt[current_t]),
+        "VentilationON": int(_v_opt[current_t]),
     }
 
     return HereAndNowActions

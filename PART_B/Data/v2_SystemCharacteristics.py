@@ -28,12 +28,20 @@ def get_fixed_data():
 
 
         # ------------------------------
-        # Initial indoor conditions
+        # Initial state
         # ------------------------------
-        'initial_temperature': 21.0,
-        'previous_initial_temperature': 21.0,
-        'initial_humidity': 40.0,
-
+        
+        "T1": 21.0,  #initial temperature at room 1
+        "T2": 21.0, #initial temperature at room 2
+        "H": 40.0, #initial humidity
+        "Occ1": np.random.uniform(25, 35), #initial occupancy at room 1
+        "Occ2": np.random.uniform(15, 25), #initial occupancy at room 2
+        "price_t": np.random.uniform(2, 8),  #initial price
+        "price_previous": np.random.uniform(2, 8),  #initial previous price
+        "vent_counter": 0, # initial counter (the ventilation was not ON previously)
+        "low_override_r1": 0,  #initial condition of the overrule controller in room 1 (OFF)
+        "low_override_r2": 0, #initial condition of the overrule controller in room 2 (OFF)
+        
 
         # ------------------------------
         # Heating system parameters

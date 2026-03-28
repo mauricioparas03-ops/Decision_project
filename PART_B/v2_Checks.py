@@ -17,7 +17,7 @@ import numpy as np
 # ------------------------------------------------------------
 # Dummy safe action
 # ------------------------------------------------------------
-DUMMY_ACTION = {"p1": 0.0, "p2": 0.0, "v": 0}
+DUMMY_ACTION = {"HeatPowerRoom1": 0.0, "HeatPowerRoom2": 0.0, "VentilationON": 0}
 
 def check_and_sanitize_action(policy, state, PowerMax):
     """
@@ -64,11 +64,11 @@ def check_and_sanitize_action(policy, state, PowerMax):
     # 2. Clip to feasible set (or fail → dummy)
     # ---------------------------------------
     try:
-        action["p1"] = float(np.clip(action["p1"], 0, PowerMax[1]))
-        action["p2"] = float(np.clip(action["p2"], 0, PowerMax[2]))
+        action["HeatPowerRoom1"] = float(np.clip(action["HeatPowerRoom1"], 0, PowerMax[1]))
+        action["HeatPowerRoom2"] = float(np.clip(action["HeatPowerRoom2"], 0, PowerMax[2]))
     
         # ventilation: threshold to {0,1}
-        action["v"] = int(float(action["v"]) > 0.5)
+        action["VentilationON"] = int(float(action["VentilationON"]) > 0.5)
 
     except Exception as e:
         print(f"[WARNING] Action clipping failed: {e}. Using dummy action.")
@@ -77,18 +77,18 @@ def check_and_sanitize_action(policy, state, PowerMax):
     # ---------------------------------------
     # Return sanitized action
     # ---------------------------------------
-    return {"p1": action["p1"], "p2": action["p2"], "v": action["v"]}
+    return {"HeatPowerRoom1": action["HeatPowerRoom1"], "HeatPowerRoom2": action["HeatPowerRoom2"], "VentilationON": action["VentilationON"]}
 
 
 ### Example use
 
 class MyPolicy:
     def select_action(self, state):
-        return {"p1": 50, "p2": -330, "v": 'something_crazy'}
+        return {"HeatPowerRoom1": 50, "HeatPowerRoom2": -330, "VentilationON": 'something_crazy'}
 
 policy = MyPolicy()
 
-state = {"T1": 21}
+state = {"T1": 21} #replace with a proper state dictionary
 PowerMax = {1: 3.0, 2: 3.0}
 
 action = check_and_sanitize_action(policy, state, PowerMax)
