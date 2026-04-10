@@ -1,10 +1,11 @@
 from EnvFunctions import apply_dynamics, check_feasibility, cost_function
 from policies.dummy_policy import select_action as dummy_action
-#Import your policy here:
-from policies.dummy_policy import select_action
 from Data.SystemCharacteristics import get_fixed_data
 import pandas as pd
 from pathlib import Path
+
+from policies.dummy_policy import select_action #Import your policy here
+
 
 data_dir = Path(__file__).resolve().parent / "Data"
 
