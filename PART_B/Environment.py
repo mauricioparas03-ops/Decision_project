@@ -3,7 +3,7 @@ from policies.dummy_policy import select_action as dummy_action
 #Import your policy here:
 #from policies.dummy_policy import select_action
 #from policies.Optimal_in_hindsight_policy import select_action, initialize_policy #UNCOMMENT THIS AND THE INITIALIZATION CALL IN THE SIMULATION LOOP IF YOU WANT TO TEST THE OPTIMAL IN HINDSIGHT POLICY
-from policies.dummy_policy import select_action
+from policies.multiSP_policy import select_action
 from Data.v2_SystemCharacteristics import get_fixed_data
 import pandas as pd
 from pathlib import Path

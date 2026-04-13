@@ -31,8 +31,8 @@ from pyomo.opt import TerminationCondition
 # ── Hyper-parameters ───────────────────────────────────────────────────────────
 HORIZON_MULTI = 4    # lookahead steps (must be >= 3 due to vent-inertia)
 GEN_SCENARIOS = 500  # raw Monte Carlo paths before tree clustering
-N_BRANCHES    = 3    # branches per node in the scenario tree
-BRANCHING_FACTORS = [6, 2, 2, 1] 
+N_BRANCHES    = 3    # branches per node in the scenario tree / not currently being used, replaced by BRANCHING_FACTORS
+BRANCHING_FACTORS = [10, 4, 2, 1] 
 
 # =============================================================================
 # 1. SYSTEM PARAMETERS
