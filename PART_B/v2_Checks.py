@@ -19,7 +19,7 @@ import numpy as np
 # ------------------------------------------------------------
 DUMMY_ACTION = {"HeatPowerRoom1": 0.0, "HeatPowerRoom2": 0.0, "VentilationON": 0}
 
-def check_and_sanitize_action(policy, state, PowerMax):
+def check_and_sanitize_action(select_action, state, PowerMax):
     """
     Performs the following checks (as required by the assignment):
       1. Times the policy execution.
@@ -43,7 +43,7 @@ def check_and_sanitize_action(policy, state, PowerMax):
     # ---------------------------------------
     t0 = time.time()
     try:
-        action = policy.select_action(state)
+        action = select_action(state)
         elapsed = time.time() - t0
 
         # If policy is too slow → dummy

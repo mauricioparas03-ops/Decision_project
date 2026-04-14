@@ -1,3 +1,4 @@
+#%%
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -14,12 +15,12 @@ days = 100
 
 # Define data directory path
 data_dir = Path(__file__).resolve().parent / "Data"
-
+# %%
 # Load and flatten temporal data from CSVs
 _occ1 = pd.read_csv(data_dir / "OccupancyRoom1.csv").values.flatten()
 _occ2 = pd.read_csv(data_dir / "OccupancyRoom2.csv").values.flatten()
 _df_prices = pd.read_csv(data_dir / "v2_PriceData.csv").values.flatten()
-
+# %%
 # -----------------------------------------------------------------------------
 # 2) Pyomo Model Initialization
 # -----------------------------------------------------------------------------
@@ -32,8 +33,10 @@ model.RT = model.R * model.T
 
 # PARAMETERS (Exogenous Data)
 model.Prices = Param(model.T, initialize=lambda m, t: float(_df_prices[t]))
-model.Occ1   = Param(model.T, initialize=lambda m, t: float(_occ1[t]))
-model.Occ2   = Param(model.T, initialize=lambda m, t: float(_occ2[t]))
+model.Occ = Param(
+    model.RT,
+    initialize=lambda m, r, t: float(_occ1[t]) if r == 1 else float(_occ2[t])
+)
 model.Tout   = Param(model.T, initialize={t: _data_fixed['outdoor_temperature'][t % _num_timeslots] for t in model.T}) 
 
 # Physical constants and thresholds
@@ -52,6 +55,10 @@ model.Thigh  = Param(initialize=_data_fixed['temp_max_comfort_threshold'])
 model.Hhigh  = Param(initialize=_data_fixed['humidity_threshold'])
 model.Tinitial = Param(initialize=_data_fixed['T1'])
 model.Hinitial = Param(initialize=_data_fixed['H'])
+model.L = Param(initialize=4, within=NonNegativeIntegers)
+model.M_temp = Param(initialize=100)
+model.M_hum = Param(initialize=100)
+model.U_vent = Param(initialize=3) # Minimum ventilation up-time
 
 # -----------------------------------------------------------------------------
 # 3) Decision Variables
@@ -64,7 +71,6 @@ model.Heat = Var(model.RT, domain=NonNegativeReals, bounds=(0, model.Pr))
 model.y_low  = Var(model.RT, domain=Binary) # 1 if T < Tmin
 model.y_ok   = Var(model.RT, domain=Binary) # 1 if T > Tok
 model.y_high = Var(model.RT, domain=Binary) # 1 if T > Thigh
-
 # State variable (Memory) for heating maintenance
 model.u = Var(model.RT, domain=Binary)
 
@@ -88,52 +94,49 @@ model.obj = Objective(rule=total_cost_rule, sense=minimize)
 def room_thermal_balance_rule(model, r, t):
     if t == model.T.first():
         return model.T_in[r, t] == model.Tinitial
-    
-    t_prev = t - 1
-    occ = model.Occ1[t_prev] if r == 1 else model.Occ2[t_prev]
-    r_other = 2 if r == 1 else 1
+    else:
+        t_prev = t - 1
+        occ = model.Occ[1, t_prev] if r == 1 else model.Occ[2, t_prev]
+        r_other = 2 if r == 1 else 1
 
-    return model.T_in[r, t] == (
-        model.T_in[r, t_prev]
-        + model.Zexch * (model.T_in[r_other, t_prev] - model.T_in[r, t_prev])
-        + model.Zloss * (model.Tout[t_prev] - model.T_in[r, t_prev])
-        + model.Zconv * model.Heat[r, t_prev]
-        - model.Zcool * model.Vent[t_prev]
-        + model.Zocc * occ
+        return model.T_in[r, t] == (
+            model.T_in[r, t_prev]
+            + model.Zexch * (model.T_in[r_other, t_prev] - model.T_in[r, t_prev])
+            + model.Zloss * (model.Tout[t_prev] - model.T_in[r, t_prev])
+            + model.Zconv * model.Heat[r, t_prev]
+            - model.Zcool * model.Vent[t_prev]
+            + model.Zocc * occ
     )
 model.Temp_Room_Dynamics = Constraint(model.RT, rule=room_thermal_balance_rule)
 
 def humidity_balance_rule(model, t):
     if t == model.T.first():
         return model.Hum[t] == model.Hinitial
-    
-    t_prev = t - 1
-    return model.Hum[t] == (
-        model.Hum[t_prev]
-        - model.Hvent * model.Vent[t_prev]
-        + model.Hocc * (model.Occ1[t_prev] + model.Occ2[t_prev])
+    else:
+        t_prev = t - 1
+        return model.Hum[t] == (
+            model.Hum[t_prev]
+            - model.Hvent * model.Vent[t_prev]
+            + model.Hocc * (model.Occ[1, t_prev] + model.Occ[2, t_prev])
     )
 model.Hum_Room_Dynamics = Constraint(model.T, rule=humidity_balance_rule)
 
 # -----------------------------------------------------------------------------
 # 6) Logic and Overrule Constraints (Big-M)
 # -----------------------------------------------------------------------------
-M_temp = 100
-M_hum = 100
-U_vent = 3 # Minimum ventilation up-time
 
 # High Temperature Logic (Forced heating shutdown)
-model.c_thigh1 = Constraint(model.RT, rule=lambda m,r,t: m.T_in[r,t] >= m.Thigh - M_temp*(1 - m.y_high[r,t]))
-model.c_thigh2 = Constraint(model.RT, rule=lambda m,r,t: m.T_in[r,t] <= m.Thigh + M_temp*m.y_high[r,t])
+model.c_thigh1 = Constraint(model.RT, rule=lambda m,r,t: m.T_in[r,t] >= m.Thigh - model.M_temp*(1 - m.y_high[r,t]))
+model.c_thigh2 = Constraint(model.RT, rule=lambda m,r,t: m.T_in[r,t] <= m.Thigh + model.M_temp*m.y_high[r,t])
 model.c_heat_off = Constraint(model.RT, rule=lambda m,r,t: m.Heat[r,t] <= m.Pr*(1 - m.y_high[r,t]))
 
 # Low Temperature Logic (Overrule Activation)
-model.c_tlow1 = Constraint(model.RT, rule=lambda m,r,t: m.T_in[r,t] <= m.Tmin + M_temp*(1 - m.y_low[r,t]))
-model.c_tlow2 = Constraint(model.RT, rule=lambda m,r,t: m.T_in[r,t] >= m.Tmin - M_temp*m.y_low[r,t])
+model.c_tlow1 = Constraint(model.RT, rule=lambda m,r,t: m.T_in[r,t] <= m.Tmin + model.M_temp*(1 - m.y_low[r,t]))
+model.c_tlow2 = Constraint(model.RT, rule=lambda m,r,t: m.T_in[r,t] >= m.Tmin - model.M_temp*m.y_low[r,t])
 
 # Temperature OK Logic (Overrule Deactivation)
-model.c_tok1 = Constraint(model.RT, rule=lambda m,r,t: m.T_in[r,t] >= m.Tok - M_temp*(1 - m.y_ok[r,t]))
-model.c_tok2 = Constraint(model.RT, rule=lambda m,r,t: m.T_in[r,t] <= m.Tok + M_temp*m.y_ok[r,t])
+model.c_tok1 = Constraint(model.RT, rule=lambda m,r,t: m.T_in[r,t] >= m.Tok - model.M_temp*(1 - m.y_ok[r,t]))
+model.c_tok2 = Constraint(model.RT, rule=lambda m,r,t: m.T_in[r,t] <= m.Tok + model.M_temp*m.y_ok[r,t])
 
 # Overrule Memory Management (u)
 model.c_u1 = Constraint(model.RT, rule=lambda m,r,t: m.u[r,t] >= m.y_low[r,t])
@@ -161,22 +164,17 @@ model.c_s2 = Constraint(model.T, rule=lambda m, t: m.s[t] <= m.Vent[t])
 model.c_s3 = Constraint(model.T, rule=lambda m, t: m.s[t] <= 1 - (m.Vent[t-1] if t > m.T.first() else 0))
 
 def min_up_time_ventilation_rule(m, t):
-    L_total = len(m.T)
-    end_idx = min(t + U_vent - 1, L_total - 1)
+    end_idx = min(t + m.U_vent - 1, m.L - 1)
     sum_vent = sum(m.Vent[tau] for tau in range(t, end_idx + 1))
-    min_val = min(U_vent, L_total - t)
+    min_val = min(m.U_vent, m.L - t)
     return sum_vent >= min_val * m.s[t]
 model.min_vent_on = Constraint(model.T, rule=min_up_time_ventilation_rule)
 
-model.c_hum = Constraint(model.T, rule=lambda m, t: m.Hum[t] <= m.Hhigh + M_hum * m.Vent[t])
+model.c_hum = Constraint(model.T, rule=lambda m, t: m.Hum[t] <= m.Hhigh + model.M_hum * m.Vent[t])
 
 # -----------------------------------------------------------------------------
-# 8) Model Export and Solving
+# 8) Model Solving
 # -----------------------------------------------------------------------------
-# Write the model to an LP file for debugging/inspection
-model.write("optimal_in_hindsight_model.lp", io_options={'symbolic_solver_labels': True})
-print("File 'optimal_in_hindsight_model.lp' successfully generated.")
-
 # Solver Configuration
 solver = SolverFactory('gurobi')
 results = solver.solve(model, tee=True)

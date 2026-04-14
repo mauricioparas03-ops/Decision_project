@@ -2,12 +2,13 @@ from EnvFunctions import apply_dynamics, check_feasibility
 from policies.dummy_policy import select_action as dummy_action
 #Import your policy here:
 from policies.dummy_policy import select_action
-#from policies.Optimal_in_hindsight_policy import select_action, initialize_policy #UNCOMMENT THIS AND THE INITIALIZATION CALL IN THE SIMULATION LOOP IF YOU WANT TO TEST THE OPTIMAL IN HINDSIGHT POLICY
 #from policies.ADP_policy import select_action
+
 from Data.v2_SystemCharacteristics import get_fixed_data
 import pandas as pd
 from pathlib import Path
 import numpy as np
+from v2_Checks import check_and_sanitize_action
 
 data_dir = Path(__file__).resolve().parent / "Data"
 
@@ -28,6 +29,7 @@ power_max = {1: data['heating_max_power'], 2: data['heating_max_power']}
 E_days = 100
 T_hours = 10
 daily_costs = np.zeros(E_days)
+
 
 for day in range(E_days):
     # extracting the exact datas for the current day from the full trajectories
@@ -62,6 +64,7 @@ for day in range(E_days):
         decision = select_action(state)
 
         # VERIFY FEASIBILITY
+        decision = action = check_and_sanitize_action(select_action, state, power_max)
         is_feasible = check_feasibility(decision, power_max)
         if not is_feasible:
             print(f"Day {day}, Time {t}: Infeasible! Using dummy.")
