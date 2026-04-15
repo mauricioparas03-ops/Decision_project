@@ -1,17 +1,16 @@
 import numpy as np
-import pandas as pd
 from pyomo.environ import *
 from sklearn.linear_model import LinearRegression
+from pathlib import Path
 
 from EnvFunctions import apply_dynamics
 from Data.PriceProcessRestaurant import price_model 
 from Data.OccupancyProcessRestaurant import next_occupancy_levels
 from Data.v2_SystemCharacteristics import get_fixed_data
-#from policies.dummy_policy import select_action as dummy_action
+from policies.dummy_policy import select_action as dummy_action
 
-
-#HYPERPARAMETERS OF THE ALGORITHM
-NUM_DAYS_SIMULATION = 50  
+# HYPERPARAMETERS OF THE ALGORITHM
+NUM_DAYS_SIMULATION = 100  
 K_SAMPLES = 5             # future scenario for each state (Monte Carlo)
 ITERATIONS = 10           # number of iterations of FVI
 T_HOURS = 10
@@ -25,50 +24,41 @@ feature_cols = [
     "vent_counter", 
     "low_override_r1", 
     "low_override_r2"
-    ]
+]
 
 
 current_weights = {}
 states_by_time = {}
-#initialize 
+
+# initialize 
 for t in range(T_HOURS):
     current_weights[t] = {feat: 0.0 for feat in feature_cols}
     current_weights[t]['intercept'] = 0.0  
     states_by_time[t] = []
 
-#STATE SAMPLING WITH SIMULATION
+# STATE SAMPLING WITH TRAJECTORY SIMULATION (Epsilon-Greedy)
 for day in range(NUM_DAYS_SIMULATION):
-    #initial random state 
-    state = {
-        "T1": np.random.uniform(data['temp_min_comfort_threshold'] - 2, data['temp_max_comfort_threshold'] + 2),
-        "T2": np.random.uniform(data['temp_min_comfort_threshold'] - 2, data['temp_max_comfort_threshold'] + 2),
-        "H": np.random.uniform(40, 85),
-        "Occ1": np.random.uniform(25, 35), 
-        "Occ2": np.random.uniform(15, 25), 
-        "price_t": np.random.uniform(2, 8),  
-        "price_previous": np.random.uniform(2, 8), 
-        "vent_counter": np.random.choice([0, 1, 2]),
-        "low_override_r1": np.random.choice([0, 1]),
-        "low_override_r2": np.random.choice([0, 1]),
-        "current_time": 0
-    }
+    state = get_fixed_data().copy()
+    state['current_time'] = 0
 
     for t in range(T_HOURS):
         state['current_time'] = t
-        # save copy of state
         states_by_time[t].append(state.copy())
         
-        # We want the ADP to explore the entire action space to learn the value of different choices (turn on, turn off, modulate)
-        decision = {
-            "HeatPowerRoom1": np.random.uniform(0, data['heating_max_power']),
-            "HeatPowerRoom2": np.random.uniform(0, data['heating_max_power']),
-            "VentilationON": np.random.choice([0, 1])
-        }
+        # Epsilon-greedy exploration: 20% random, 80% sensible policy
+        if np.random.rand() < 0.20:
+            decision = {
+                "HeatPowerRoom1": np.random.uniform(0, data['heating_max_power']),
+                "HeatPowerRoom2": np.random.uniform(0, data['heating_max_power']),
+                "VentilationON": np.random.choice([0, 1])
+            }
+        else:
+            decision = dummy_action(state)
         
-        #phisics dynamic
+        # Physical Dynamics
         state, _ = apply_dynamics(state, decision, data)
         
-        # exogenous dynamic (uncertainty W_{t+1})
+        # Exogenous Dynamics (Mathematical Models, NO CSV DATA)
         if t + 1 < T_HOURS:
             next_o1, next_o2 = next_occupancy_levels(state['Occ1'], state['Occ2'])
             next_p = price_model(state['price_t'], state['price_previous'])
@@ -79,7 +69,7 @@ for day in range(NUM_DAYS_SIMULATION):
             state['price_t'] = next_p
 
 
-#TARGET V* CALCULATION (one step lookahead)
+# TARGET V* CALCULATION (one step lookahead)
 def solve_one_step(state, future_scenarios, weights_next_step):
     m = ConcreteModel()
     
@@ -110,8 +100,12 @@ def solve_one_step(state, future_scenarios, weights_next_step):
     m.H_next = Var(m.Scenarios)
     m.low_override_r1_next = Var(m.Scenarios, domain=Binary)
     m.low_override_r2_next = Var(m.Scenarios, domain=Binary)
-    
     m.vent_counter_next = Var(domain=NonNegativeReals)
+    
+    # Trust Region Variables
+    m.T1_vfa = Var(m.Scenarios)
+    m.T2_vfa = Var(m.Scenarios)
+
     m.c_vc = Constraint(expr=m.vent_counter_next == (state['vent_counter'] + 1) * m.v)
     
     # Immediate cost
@@ -131,7 +125,7 @@ def solve_one_step(state, future_scenarios, weights_next_step):
         m.add_component(f"c_t2_{k}", Constraint(expr=m.T2_next[k] == state['T2'] + data['heat_exchange_coeff'] * (state['T1'] - state['T2']) + data['thermal_loss_coeff'] * (tout - state['T2']) + data['heating_efficiency_coeff'] * m.p2 - data['heat_vent_coeff'] * m.v + data['heat_occupancy_coeff'] * state['Occ2']))
         m.add_component(f"c_h_{k}", Constraint(expr=m.H_next[k] == state['H'] - data['humidity_vent_coeff'] * m.v + data['humidity_occupancy_coeff'] * (state['Occ1'] + state['Occ2'])))
         
-        #mapping for future overrule
+        # mapping for future overrule
         thresh1 = (data['temp_min_comfort_threshold'] if state['low_override_r1'] == 0 else data['temp_OK_threshold']) + eps
         m.add_component(f"c_low1_a_{k}", Constraint(expr=m.T1_next[k] >= thresh1 - M * m.low_override_r1_next[k]))
         m.add_component(f"c_low1_b_{k}", Constraint(expr=m.T1_next[k] <= thresh1 + M * (1 - m.low_override_r1_next[k])))
@@ -142,10 +136,24 @@ def solve_one_step(state, future_scenarios, weights_next_step):
 
         # bellman equation for Approximate Value Function
         if weights_next_step is not None:
+            # Dynamic Trust Region for T1
+            if weights_next_step['T1'] < 0:
+                m.add_component(f"c_vfa_t1_a_{k}", Constraint(expr=m.T1_vfa[k] <= m.T1_next[k]))
+                m.add_component(f"c_vfa_t1_b_{k}", Constraint(expr=m.T1_vfa[k] <= data['temp_max_comfort_threshold']))
+            else:
+                m.add_component(f"c_vfa_t1_{k}", Constraint(expr=m.T1_vfa[k] == m.T1_next[k]))
+
+            # Dynamic Trust Region for T2
+            if weights_next_step['T2'] < 0:
+                m.add_component(f"c_vfa_t2_a_{k}", Constraint(expr=m.T2_vfa[k] <= m.T2_next[k]))
+                m.add_component(f"c_vfa_t2_b_{k}", Constraint(expr=m.T2_vfa[k] <= data['temp_max_comfort_threshold']))
+            else:
+                m.add_component(f"c_vfa_t2_{k}", Constraint(expr=m.T2_vfa[k] == m.T2_next[k]))
+
             scen_value = (
                 weights_next_step['intercept'] + 
-                weights_next_step['T1'] * m.T1_next[k] + 
-                weights_next_step['T2'] * m.T2_next[k] +
+                weights_next_step['T1'] * m.T1_vfa[k] + 
+                weights_next_step['T2'] * m.T2_vfa[k] +
                 weights_next_step['H'] * m.H_next[k] + 
                 weights_next_step['price_t'] * scen['price_t'] +
                 weights_next_step['vent_counter'] * m.vent_counter_next +
@@ -153,7 +161,7 @@ def solve_one_step(state, future_scenarios, weights_next_step):
                 weights_next_step['low_override_r2'] * m.low_override_r2_next[k]
             )
         else:
-            scen_value = 0.0 # if t=9 future cost is 0
+            scen_value = 0.0 # if t=9 future cost is 0 (Natural End-of-Horizon)
             
         expected_future_cost += prob * scen_value
 
@@ -164,13 +172,13 @@ def solve_one_step(state, future_scenarios, weights_next_step):
     return value(m.obj)
 
 
-#FITTED VALUE ITERATION (ETA UPDATE)
+# FITTED VALUE ITERATION (ETA UPDATE)
 for i in range(ITERATIONS):
     for t in reversed(range(T_HOURS)):
         X = []
         y = []
         
-        #next hour weights (0 if last hour)
+        # next hour weights (0 if last hour)
         weights_next_step = current_weights[t+1] if t < T_HOURS - 1 else None
         
         for state in states_by_time[t]:
@@ -199,19 +207,13 @@ for i in range(ITERATIONS):
             current_weights[t]['intercept'] = model.intercept_
 
     # check
-    print(f"weigth t=0 -> T1: {current_weights[0]['T1']:.4f}, vent: {current_weights[0]['vent_counter']:.4f}, low_ov1: {current_weights[0]['low_override_r1']:.4f}")
+    print(f"Iteration {i} | weigth t=0 -> T1: {current_weights[0]['T1']:.4f}, vent: {current_weights[0]['vent_counter']:.4f}, low_ov1: {current_weights[0]['low_override_r1']:.4f}")
 
 
-print("VFA_WEIGHTS_MATRIX = {")
+print("VFA_WEIGHTS = {")
 for t in range(T_HOURS):
     print(f"    {t}: {{", end="")
     for k, v in current_weights[t].items():
         print(f"'{k}': {v:.4f}, ", end="")
     print("},")
 print("}")
-
-
-
-    
-
-
