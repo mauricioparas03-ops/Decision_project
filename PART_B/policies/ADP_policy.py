@@ -4,16 +4,16 @@ from Data.v2_SystemCharacteristics import get_fixed_data
 
 # definitive wheights for the VFA, obtained after training on 500 days with a linear regression on the collected data
 VFA_WEIGHTS = {
-    0: {'T1': -4.7728, 'T2': -4.2723, 'H': 2.0153, 'price_t': 63.9635, 'vent_counter': 2.8734, 'low_override_r1': 19.5118, 'low_override_r2': 4.5856, },
-    1: {'T1': -3.4651, 'T2': -5.2359, 'H': 1.4317, 'price_t': 40.1735, 'vent_counter': -2.4675, 'low_override_r1': 21.6570, 'low_override_r2': 3.9929, },
-    2: {'T1': -5.2616, 'T2': -5.4729, 'H': 1.5572, 'price_t': 31.5471, 'vent_counter': -1.2298, 'low_override_r1': 16.2080, 'low_override_r2': 1.6170, },
-    3: {'T1': -5.7597, 'T2': -8.1122, 'H': 1.7312, 'price_t': 26.3297, 'vent_counter': -0.6071, 'low_override_r1': 10.4642, 'low_override_r2': -2.7964, },
-    4: {'T1': -7.2416, 'T2': -7.4703, 'H': 1.6601, 'price_t': 22.7137, 'vent_counter': 3.1988, 'low_override_r1': 1.8259, 'low_override_r2': 5.1817, },
-    5: {'T1': -5.7665, 'T2': -8.8734, 'H': 1.5656, 'price_t': 19.6383, 'vent_counter': -0.1712, 'low_override_r1': 5.1719, 'low_override_r2': 5.1719, },
-    6: {'T1': -5.8720, 'T2': -4.7384, 'H': 1.3976, 'price_t': 14.4499, 'vent_counter': 1.4589, 'low_override_r1': 12.6062, 'low_override_r2': 5.0689, },
-    7: {'T1': -4.8330, 'T2': -2.7647, 'H': 0.9841, 'price_t': 12.0165, 'vent_counter': 1.6978, 'low_override_r1': 18.7546, 'low_override_r2': 7.6453, },
-    8: {'T1': -0.3268, 'T2': -3.5952, 'H': 0.4287, 'price_t': 7.9712, 'vent_counter': -0.4391, 'low_override_r1': 10.0615, 'low_override_r2': 16.4810, },
-    9: {'T1': -0.6808, 'T2': -0.1249, 'H': 0.3436, 'price_t': 4.1506, 'vent_counter': 0.6065, 'low_override_r1': 10.3152, 'low_override_r2': 10.3152, },
+    0: {'T1': -7.1132, 'T2': -4.9259, 'H': 0.3993, 'price_t': 47.3246, 'vent_counter': 14.0540, 'low_override_r1': 31.9754, 'low_override_r2': -1.3139, 'intercept': 108.8559, },
+    1: {'T1': -4.5161, 'T2': -7.5977, 'H': 0.4620, 'price_t': 26.4468, 'vent_counter': 1.4653, 'low_override_r1': 21.9589, 'low_override_r2': 2.1926, 'intercept': 201.5129, },
+    2: {'T1': -5.8139, 'T2': -7.4732, 'H': 0.5764, 'price_t': 19.4310, 'vent_counter': -2.9355, 'low_override_r1': 21.0780, 'low_override_r2': -3.0473, 'intercept': 244.7286, },
+    3: {'T1': -7.7707, 'T2': -4.1875, 'H': 0.5017, 'price_t': 15.5271, 'vent_counter': -1.4120, 'low_override_r1': 21.7614, 'low_override_r2': 3.4125, 'intercept': 218.3277, },
+    4: {'T1': -3.3780, 'T2': -5.8786, 'H': 0.4014, 'price_t': 12.8491, 'vent_counter': -0.6709, 'low_override_r1': 22.7219, 'low_override_r2': 6.6950, 'intercept': 165.2901, },
+    5: {'T1': -3.6561, 'T2': -3.2642, 'H': 0.5472, 'price_t': 10.5746, 'vent_counter': 0.5681, 'low_override_r1': 24.1337, 'low_override_r2': 14.9623, 'intercept': 104.4287, },
+    6: {'T1': -3.9434, 'T2': -2.8828, 'H': 0.5332, 'price_t': 9.7436, 'vent_counter': -0.6949, 'low_override_r1': 23.9571, 'low_override_r2': 24.2764, 'intercept': 97.6755, },
+    7: {'T1': 0.3850, 'T2': -4.2068, 'H': 0.3613, 'price_t': 8.6409, 'vent_counter': 0.1511, 'low_override_r1': 24.9123, 'low_override_r2': 30.9137, 'intercept': 38.7269, },
+    8: {'T1': -2.0624, 'T2': -0.5792, 'H': 0.3323, 'price_t': 6.5563, 'vent_counter': 0.1911, 'low_override_r1': 23.2699, 'low_override_r2': 23.5573, 'intercept': 16.3067, },
+    9: {'T1': -0.7604, 'T2': 1.0433, 'H': 0.0535, 'price_t': 3.2502, 'vent_counter': -0.0238, 'low_override_r1': 11.5441, 'low_override_r2': 10.6425, 'intercept': -17.6645, },
 }
 
 def select_action(state):
@@ -33,20 +33,20 @@ def select_action(state):
     m.low_override_r1_next = Var(domain=Binary)
     m.low_override_r2_next = Var(domain=Binary)
 
-    #VFA variables to calculate reward
-    m.T1_vfa = Var()
-    m.T2_vfa = Var()
-    m.H_vfa = Var()
+    # #VFA variables to calculate reward
+    # m.T1_vfa = Var()
+    # m.T2_vfa = Var()
+    # m.H_vfa = Var()
 
     #OVERRULE FOR CURRENT STEP
     if state['T1'] > data['temp_max_comfort_threshold']:
         m.p1.fix(0)
-    elif state['low_override_r1'] == 1:
+    elif state['T1'] < data['temp_min_comfort_threshold'] or state['low_override_r1'] == 1:
         m.p1.fix(data['heating_max_power'])
 
     if state['T2'] > data['temp_max_comfort_threshold']:
         m.p2.fix(0)
-    elif state['low_override_r2'] == 1:
+    elif state['T2'] < data['temp_min_comfort_threshold'] or state['low_override_r2'] == 1:
         m.p2.fix(data['heating_max_power'])
 
     if state['H'] > data['humidity_threshold'] or state['vent_counter'] in [1, 2]:
@@ -82,20 +82,20 @@ def select_action(state):
     m.c_low2_a = Constraint(expr=m.T2_next >= thresh2 - M * m.low_override_r2_next)
     m.c_low2_b = Constraint(expr=m.T2_next <= thresh2 + M * (1 - m.low_override_r2_next))
 
-    T_TARGET = data['temp_max_comfort_threshold']
-    # Relaxed humidity target to avoid forcing unnecessary ventilation when we are already below the risk threshold
-    H_TARGET = data['humidity_threshold'] - 2.0
+#     T_TARGET = data['temp_max_comfort_threshold']
+#     # Relaxed humidity target to avoid forcing unnecessary ventilation when we are already below the risk threshold
+#     H_TARGET = data['humidity_threshold'] - 2.0
 
-    # If w < 0, the solver pushes to maximize T_vfa. We lock it at the target, turning off the incentive beyond that threshold.
-    m.c_vfa_t1_a = Constraint(expr=m.T1_vfa <= m.T1_next)
-    m.c_vfa_t1_b = Constraint(expr=m.T1_vfa <= T_TARGET)
+#     # If w < 0, the solver pushes to maximize T_vfa. We lock it at the target, turning off the incentive beyond that threshold.
+#     m.c_vfa_t1_a = Constraint(expr=m.T1_vfa <= m.T1_next)
+#     m.c_vfa_t1_b = Constraint(expr=m.T1_vfa <= T_TARGET)
 
-    m.c_vfa_t2_a = Constraint(expr=m.T2_vfa <= m.T2_next)
-    m.c_vfa_t2_b = Constraint(expr=m.T2_vfa <= T_TARGET)
+#     m.c_vfa_t2_a = Constraint(expr=m.T2_vfa <= m.T2_next)
+#     m.c_vfa_t2_b = Constraint(expr=m.T2_vfa <= T_TARGET)
 
-# If w > 0, the solver pushes to minimize H_vfa. We lock it to the target (it doesn't go below it), turning off the incentive.
-    m.c_vfa_h_a = Constraint(expr=m.H_vfa >= m.H_next)
-    m.c_vfa_h_b = Constraint(expr=m.H_vfa >= H_TARGET)
+# # If w > 0, the solver pushes to minimize H_vfa. We lock it to the target (it doesn't go below it), turning off the incentive.
+#     m.c_vfa_h_a = Constraint(expr=m.H_vfa >= m.H_next)
+#     m.c_vfa_h_b = Constraint(expr=m.H_vfa >= H_TARGET)
 
     #APPROXIMATE VALUE FUNCTION 
     immediate_cost = state['price_t'] * (m.p1 + m.p2 + m.v * data['ventilation_power'])
@@ -106,19 +106,15 @@ def select_action(state):
     if t < 9:
         w = VFA_WEIGHTS[t+1]
         
-        # Cleanup of negative weights on penalty variables
-        # If the regression has assigned a negative weight to trigger an alarm, we reset it.
-        w_v_count = max(0, w['vent_counter'])
-        w_ov1 = max(0, w['low_override_r1'])
-        w_ov2 = max(0, w['low_override_r2'])
         
         expected_future_cost = (
-            w['T1'] * m.T1_vfa + 
-            w['T2'] * m.T2_vfa + 
-            w['H'] * m.H_vfa + 
-            w_v_count * m.vent_counter_next + 
-            w_ov1 * m.low_override_r1_next + 
-            w_ov2 * m.low_override_r2_next
+            w['intercept'] +   
+            w['T1'] * m.T1_next +  
+            w['T2'] * m.T2_next + 
+            w['H'] * m.H_next +
+            w['vent_counter'] * m.vent_counter_next + 
+            w['low_override_r1'] * m.low_override_r1_next + 
+            w['low_override_r2'] * m.low_override_r2_next
         )
     else:
         # end of the day no cost
@@ -130,6 +126,61 @@ def select_action(state):
     solver = SolverFactory('gurobi')
     solver.solve(m, tee=False)
 
+# =====================================================================
+    # INIZIO BLOCCO DI DEBUG VFA (Aggiornato con Trust Region)
+    # =====================================================================
+    try:
+        # 1. Estrazione stati fisici (realtà termodinamica)
+        val_T1_next = value(m.T1_next)
+        val_T2_next = value(m.T2_next)
+        val_H_next  = value(m.H_next)
+        val_vent    = value(m.vent_counter_next)
+        val_ov1     = value(m.low_override_r1_next)
+        val_ov2     = value(m.low_override_r2_next)
+        
+        # # 2. Estrazione stati VFA (visione matematica limitata)
+        # val_T1_vfa = value(m.T1_vfa)
+        # val_T2_vfa = value(m.T2_vfa)
+        # val_H_vfa  = value(m.H_vfa)
+        
+        val_costo_immediato = value(immediate_cost)
+        
+        if t < 9:
+            val_costo_futuro = value(expected_future_cost)
+        else:
+            val_costo_futuro = 0.0
+            
+        val_costo_totale = val_costo_immediato + val_costo_futuro
+
+        print(f"\n{'='*65}")
+        print(f"🔎 DEBUG TIMESTEP t = {t}")
+        print(f"{'='*65}")
+        print(f"Costo Immediato (Oggi) : {val_costo_immediato:>8.2f}")
+        print(f"Costo Futuro (VFA)     : {val_costo_futuro:>8.2f}")
+        print(f"Obiettivo Totale Solver: {val_costo_totale:>8.2f}")
+        print("-" * 65)
+        
+        if t < 9:
+            w = VFA_WEIGHTS[t+1]
+            
+            # Pesi corretti come nel modello
+            w_v_count = max(0, w['vent_counter'])
+            w_ov1 = max(0, w['low_override_r1'])
+            w_ov2 = max(0, w['low_override_r2'])
+
+            print("Dettaglio fisica vs Trust Region VFA scelti dal solver:")
+            print(f"  T1: fisico {val_T1_next:>5.2f} ->  Peso: {w['T1']:>7.4f} ")
+            print(f"  T2: fisico {val_T2_next:>5.2f} ->  Peso: {w['T2']:>7.4f} ")
+            print(f"  H:  fisico {val_H_next:>5.2f}  -> Peso: {w['H']:>7.4f} ")
+            print(f"  vent_c:  {val_vent:>5.2f} | Peso adj: {w_v_count:>7.4f} | Impatto: {w_v_count * val_vent:>8.2f}")
+            print(f"  over_r1: {val_ov1:>5.2f} | Peso adj: {w_ov1:>7.4f} | Impatto: {w_ov1 * val_ov1:>8.2f}")
+            print(f"  over_r2: {val_ov2:>5.2f} | Peso adj: {w_ov2:>7.4f} | Impatto: {w_ov2 * val_ov2:>8.2f}")
+        print(f"{'='*65}\n")
+        
+    except Exception as e:
+        print(f"Errore nel blocco di debug VFA: {e}")
+    # =====================================================================
+    # FINE BLOCCO DI DEBUG VFA
 
     return {
         "HeatPowerRoom1": value(m.p1),
