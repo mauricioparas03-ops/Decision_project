@@ -119,7 +119,7 @@ def apply_dynamics(state, decisions, data):
     # REAL COST
     # cost after overrules
 
-    real_cost = -state['price_t'] * (
+    real_cost = state['price_t'] * (
         data['ventilation_power'] * v_eff 
         + p1_eff 
         + p2_eff
