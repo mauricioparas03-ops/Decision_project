@@ -60,6 +60,9 @@ model.M_temp = Param(initialize=100)
 model.M_hum = Param(initialize=100)
 model.U_vent = Param(initialize=3) # Minimum ventilation up-time
 
+def is_day_start(t):
+    return t % _num_timeslots == 0
+
 # -----------------------------------------------------------------------------
 # 3) Decision Variables
 # -----------------------------------------------------------------------------
@@ -92,7 +95,7 @@ model.obj = Objective(rule=total_cost_rule, sense=minimize)
 # 5) Dynamic Constraints (Thermal and Humidity Balance)
 # -----------------------------------------------------------------------------
 def room_thermal_balance_rule(model, r, t):
-    if t == model.T.first():
+    if is_day_start(t):
         return model.T_in[r, t] == model.Tinitial
     else:
         t_prev = t - 1
@@ -110,7 +113,7 @@ def room_thermal_balance_rule(model, r, t):
 model.Temp_Room_Dynamics = Constraint(model.RT, rule=room_thermal_balance_rule)
 
 def humidity_balance_rule(model, t):
-    if t == model.T.first():
+    if is_day_start(t):
         return model.Hum[t] == model.Hinitial
     else:
         t_prev = t - 1
@@ -141,14 +144,14 @@ model.c_tok2 = Constraint(model.RT, rule=lambda m,r,t: m.T_in[r,t] <= m.Tok + mo
 # Overrule Memory Management (u)
 model.c_u1 = Constraint(model.RT, rule=lambda m,r,t: m.u[r,t] >= m.y_low[r,t])
 def u_rule2(m, r, t):
-    u_prev = m.u[r,t-1] if t > m.T.first() else 0
+    u_prev = m.u[r,t-1] if not is_day_start(t) else 0
     return m.u[r,t] <= u_prev + m.y_low[r,t]
 model.c_u2 = Constraint(model.RT, rule=u_rule2)
 
 model.c_heat_max = Constraint(model.RT, rule=lambda m,r,t: m.Heat[r,t] >= m.Pr * m.u[r,t])
 
 def u_rule3(m, r, t):
-    u_prev = m.u[r,t-1] if t > m.T.first() else 0
+    u_prev = m.u[r,t-1] if not is_day_start(t) else 0
     return m.u[r,t] >= u_prev - m.y_ok[r,t]
 model.c_u3 = Constraint(model.RT, rule=u_rule3)
 model.c_u4 = Constraint(model.RT, rule=lambda m,r,t: m.u[r,t] <= 1 - m.y_ok[r,t])
@@ -157,11 +160,11 @@ model.c_u4 = Constraint(model.RT, rule=lambda m,r,t: m.u[r,t] <= 1 - m.y_ok[r,t]
 # 7) Ventilation Constraints (Startup, Min-Up Time, Humidity)
 # -----------------------------------------------------------------------------
 def s_rule1(m, t):
-    v_prev = m.Vent[t-1] if t > m.T.first() else 0
+    v_prev = m.Vent[t-1] if not is_day_start(t) else 0
     return m.s[t] >= m.Vent[t] - v_prev
 model.c_s1 = Constraint(model.T, rule=s_rule1)
 model.c_s2 = Constraint(model.T, rule=lambda m, t: m.s[t] <= m.Vent[t])
-model.c_s3 = Constraint(model.T, rule=lambda m, t: m.s[t] <= 1 - (m.Vent[t-1] if t > m.T.first() else 0))
+model.c_s3 = Constraint(model.T, rule=lambda m, t: m.s[t] <= 1 - (m.Vent[t-1] if not is_day_start(t) else 0))
 
 def min_up_time_ventilation_rule(m, t):
     end_idx = min(t + m.U_vent - 1, m.L - 1)
