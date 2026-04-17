@@ -326,7 +326,7 @@ def build_sp_model(current_state, price_dict, occ_dict, hum_occ_dict,
     m.u = Var(m.RTS, domain=Binary)   # 1 → low-temp overrule active
     m.w = Var(m.RTS, domain=Binary)   # 1 → temperature recovered to T_OK
     m.y = Var(m.RTS, domain=Binary)   # 1 → high-temp overrule active
-
+    m.y_low = Var(m.RTS, domain=Binary) # 1 -> T is below T_low
     # ── State variables ───────────────────────────────────────────────────────
     m.T_in = Var(m.RTS, domain=NonNegativeReals)
     m.Hum  = Var(m.TS,  domain=NonNegativeReals)
@@ -360,20 +360,33 @@ def build_sp_model(current_state, price_dict, occ_dict, hum_occ_dict,
     m.HumDyn = Constraint(m.TS, rule=hum_dynamics)
 
     # ── Overrule controller: LOW temperature ──────────────────────────────────
-    def u_activation(m, r, t, s):
-        return m.T_in[r, t, s] >= m.Tmin - M * m.u[r, t, s]
-    m.UActivation = Constraint(m.RTS, rule=u_activation)
+       #EQN 8&9
+    # 1. Strict Detection of Low Temperature (y_low) 
+    def y_low_lower(m, r, t, s):
+        # Forces y_low=1 when T < Tmin
+        return m.T_in[r, t, s] >= m.Tmin - M * m.y_low[r, t, s]
+    m.YLowLower = Constraint(m.RTS, rule=y_low_lower)
 
-    def w_deactivation(m, r, t, s):
+    def y_low_upper(m, r, t, s):
+        # Forces y_low=0 when T >= Tmin
+        return m.T_in[r, t, s] <= m.Tmin + M * (1 - m.y_low[r, t, s])
+    m.YLowUpper = Constraint(m.RTS, rule=y_low_upper)
+
+    #EQN 10&11
+    # 2. Strict Detection of Recovery Temperature (w)
+    def w_deactivation_lower(m, r, t, s):
+        # Forces w=1 when T >= Tok
         return m.T_in[r, t, s] >= m.Tok - M * (1 - m.w[r, t, s])
-    m.WDeactivation = Constraint(m.RTS, rule=w_deactivation)
+    m.WDeactivationLower = Constraint(m.RTS, rule=w_deactivation_lower)
+
+    def w_deactivation_upper(m, r, t, s):
+        # Forces w=0 when T < Tok
+        return m.T_in[r, t, s] <= m.Tok + M * m.w[r, t, s]
+    m.WDeactivationUpper = Constraint(m.RTS, rule=w_deactivation_upper)
 
     def u_persistence(m, r, t, s):
         if t == 0:
-            init_u = 1 if current_state.get(f'low_override_r{r}', 0) else 0
-            m.u[r, t, s].fix(init_u)
-            m.w[r, t, s].fix(0)
-            return Constraint.Skip
+            return Constraint.Skip  # Let OverruleInit handle this
         return m.u[r, t, s] >= m.u[r, t - 1, s] - m.w[r, t, s]
     m.UPersistence = Constraint(m.RTS, rule=u_persistence)
 
@@ -382,9 +395,15 @@ def build_sp_model(current_state, price_dict, occ_dict, hum_occ_dict,
     m.HeatMaxOverrule = Constraint(m.RTS, rule=heat_max_when_overrule)
 
     # ── Overrule controller: HIGH temperature ─────────────────────────────────
-    def y_activation(m, r, t, s):
+    def y_activation_lower(m, r, t, s):
+        # Forces y=1 when T > Thigh
         return m.T_in[r, t, s] <= m.Thigh + M * m.y[r, t, s]
-    m.YActivation = Constraint(m.RTS, rule=y_activation)
+    m.YActivationLower = Constraint(m.RTS, rule=y_activation_lower)
+
+    def y_activation_upper(m, r, t, s):
+        # Forces y=0 when T <= Thigh
+        return m.T_in[r, t, s] >= m.Thigh - M * (1 - m.y[r, t, s])
+    m.YActivationUpper = Constraint(m.RTS, rule=y_activation_upper)
 
     def heat_off_when_overrule(m, r, t, s):
         return m.Heat[r, t, s] <= m.Pr * (1 - m.y[r, t, s])
@@ -394,6 +413,32 @@ def build_sp_model(current_state, price_dict, occ_dict, hum_occ_dict,
     def vent_humidity_overrule(m, t, s):
         return m.Hum[t, s] <= m.Hhigh + M * m.Vent[t, s]
     m.VentHumOverrule = Constraint(m.TS, rule=vent_humidity_overrule)
+
+    # __ State update for overrule controller _________________________________
+    #EQN 12,13,15,16
+    def temp_lower_than_tmin_1(m, r, t, s):
+        # Must turn ON if it gets too cold
+        return m.u[r, t, s] >= m.y_low[r, t, s]
+    m.UStateLogic1 = Constraint(m.RTS, rule=temp_lower_than_tmin_1)
+
+    def temp_higher_than_tok(m, r, t, s):
+        # Cannot turn ON unless it is too cold
+        if t == 0: return Constraint.Skip
+        return m.u[r, t, s] <= m.u[r, t - 1, s] + m.y_low[r, t, s]
+    m.UStateLogic3 = Constraint(m.RTS, rule=temp_higher_than_tok)
+
+    def temp_higher_than_tok_2(m, r, t, s):
+        # Must turn OFF if it reaches Tok
+        return m.u[r, t, s] <= 1 - m.w[r, t, s]
+    m.UStateLogic4 = Constraint(m.RTS, rule=temp_higher_than_tok_2)
+
+    def overrule_init(m, r, t, s):
+        # At t=0, fix u to match the real system's overrule state
+        if t == 0:
+            init_u = 1 if current_state.get(f'low_override_r{r}', 0) else 0
+            return m.u[r, t, s] == init_u
+        return Constraint.Skip
+    m.OverruleInit = Constraint(m.RTS, rule=overrule_init)
 
     # ── Ventilation inertia: 3-hour minimum ON time ───────────────────────────
     def on_off_exclusivity(m, t, s):
