@@ -12,7 +12,7 @@ NOT TO BE CHANGED BY THE STUDENTS
 
 import numpy as np
 import matplotlib.pyplot as plt
-import Data.SystemCharacteristics as SystemCharacteristics
+import Data.v2_SystemCharacteristics as SystemCharacteristics
 
 
 def price_model(current_price, previous_price):
