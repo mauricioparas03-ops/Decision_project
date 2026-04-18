@@ -31,7 +31,7 @@ from Data.PriceProcessRestaurant import price_model
 
 # ── Hyper-parameters ───────────────────────────────────────────────────────────
 HORIZON = 4   # lookahead steps (must be >= 3 due to vent-inertia constraint)
-N_SCENARIOS = 20
+N_SCENARIOS = 1 # special case with just 1 scenario
 
 # =============================================================================
 # 1. SYSTEM PARAMETERS
