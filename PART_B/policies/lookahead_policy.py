@@ -9,12 +9,14 @@ Compatible with Environment.py:
 Design choices
 --------------
   Lookahead horizon : HORIZON = 4 steps  (minimum 3 due to vent inertia)
-  Scenarios         : 1 single sampled path (deterministic lookahead)
+    Scenarios         : N_SCENARIOS sampled paths, averaged into expected trajectories
   Solver            : Gurobi, TimeLimit = 10 s, MIPGap = 2 %
 """
 
 import os
 os.environ['OMP_NUM_THREADS'] = '1'
+
+import warnings
 
 import numpy as np
 
@@ -29,6 +31,7 @@ from Data.PriceProcessRestaurant import price_model
 
 # ── Hyper-parameters ───────────────────────────────────────────────────────────
 HORIZON = 4   # lookahead steps (must be >= 3 due to vent-inertia constraint)
+N_SCENARIOS = 20
 
 # =============================================================================
 # 1. SYSTEM PARAMETERS
@@ -89,12 +92,13 @@ DATA = get_fixed_data()
 
 
 # =============================================================================
-# 3. SINGLE-SCENARIO PATH GENERATION
+# 3. MULTI-SCENARIO PATH GENERATION
 # =============================================================================
 
-def generate_single_scenario(state, occ_r1_now, occ_r2_now, horizon):
+def generate_expected_trajectories(price_now, price_prev, occ_r1_now, occ_r2_now,
+                                   horizon, n_scenarios=N_SCENARIOS):
     """
-    Sample one deterministic-lookahead path over *horizon* steps.
+    Sample multiple lookahead paths and average them step by step.
 
     Returns
     -------
@@ -102,27 +106,40 @@ def generate_single_scenario(state, occ_r1_now, occ_r2_now, horizon):
     occ_dict     : {(r, t): float}   – occupancy of room r at step t
     hum_occ_dict : {t: float}        – total occupancy at step t
     """
-    price_dict   = {}
-    occ_dict     = {}
-    hum_occ_dict = {}
+    price_sum = np.zeros(horizon)
+    occ1_sum = np.zeros(horizon)
+    occ2_sum = np.zeros(horizon)
+    tot_occ_sum = np.zeros(horizon)
 
-    current_hour = int(state['current_time'])
-    o1_cur, o2_cur  = occ_r1_now, occ_r2_now
+    n_scenarios = max(1, int(n_scenarios))
 
-    day_prices = state.get('day_prices')
+    for _ in range(n_scenarios):
+        p_cur = price_now
+        p_prev = price_prev
+        o1_cur = occ_r1_now
+        o2_cur = occ_r2_now
 
-        # AGGIUSTARE L'INPUT DEL PREZZO, DEVE PRENDERLO DALLO STATE NON RIFARLO OGNI VOLTA
-    for t in range(horizon):
-        p_next           = 
-        o1_next, o2_next = next_occupancy_levels(o1_cur, o2_cur)
+        for t in range(horizon):
+            p_next = price_model(p_cur, p_prev)
+            o1_next, o2_next = next_occupancy_levels(o1_cur, o2_cur)
 
-        price_dict[t]      = p_next
-        occ_dict[1, t]     = o1_next
-        occ_dict[2, t]     = o2_next
-        hum_occ_dict[t]    = o1_next + o2_next
+            price_sum[t] += p_next
+            occ1_sum[t] += o1_next
+            occ2_sum[t] += o2_next
+            tot_occ_sum[t] += o1_next + o2_next
 
-        p_prev, p_cur   = p_cur,  p_next
-        o1_cur, o2_cur  = o1_next, o2_next
+            p_prev, p_cur = p_cur, p_next
+            o1_cur, o2_cur = o1_next, o2_next
+
+    expected_prices_trajectory = price_sum / n_scenarios
+    expected_occ1_trajectory = occ1_sum / n_scenarios
+    expected_occ2_trajectory = occ2_sum / n_scenarios
+    expected_tot_occ_trajectory = tot_occ_sum / n_scenarios
+
+    price_dict = {t: float(expected_prices_trajectory[t]) for t in range(horizon)}
+    occ_dict = {(1, t): float(expected_occ1_trajectory[t]) for t in range(horizon)}
+    occ_dict.update({(2, t): float(expected_occ2_trajectory[t]) for t in range(horizon)})
+    hum_occ_dict = {t: float(expected_tot_occ_trajectory[t]) for t in range(horizon)}
 
     return price_dict, occ_dict, hum_occ_dict
 
@@ -131,7 +148,7 @@ def generate_single_scenario(state, occ_r1_now, occ_r2_now, horizon):
 # 4. PYOMO MILP MODEL  (deterministic lookahead)
 # =============================================================================
 
-def build_lookahead_model(current_state, price_dict, occ_dict, hum_occ_dict,
+def build_lookahead_model(current_state, price_dict, occ_dict,
                           horizon):
     """
     Build the deterministic MILP for the lookahead policy.
@@ -169,7 +186,6 @@ def build_lookahead_model(current_state, price_dict, occ_dict, hum_occ_dict,
     # PARAMETERS (Exogenous Data)
     m.O      = Param(m.RT, initialize=occ_dict)
     m.prices = Param(m.T,  initialize=price_dict)
-    m.HumOcc = Param(m.T,  initialize=hum_occ_dict)
 
     m.Tout   = Param(m.T, initialize={t: d['outdoor_temperature'][t % _num_timeslots] for t in m.T}) 
 
@@ -368,7 +384,7 @@ def lookahead_policy(state):
     # v_status = 1 if vc > 0 else 0
 
     # ── Generate one sample path ──────────────────────────────────────────────
-    price_dict, occ_dict, hum_occ_dict = generate_single_scenario(
+    price_dict, occ_dict, hum_occ_dict = generate_expected_trajectories(
         price_now   = state['price_t'],
         price_prev  = state['price_previous'],
         occ_r1_now  = state['Occ1'],
@@ -388,10 +404,20 @@ def lookahead_policy(state):
     # }
 
     # ── Build and solve ───────────────────────────────────────────────────────
-    model  = build_lookahead_model(state, price_dict, occ_dict,
-                                   hum_occ_dict, horizon)
+    model  = build_lookahead_model(state, price_dict, occ_dict, horizon)
     solver = SolverFactory('gurobi')
-    solver.solve(model, tee=False)
+    result = solver.solve(model, tee=False)
+
+    if result.solver.termination_condition not in (
+        TerminationCondition.optimal,
+        TerminationCondition.feasible,
+    ):
+        warnings.warn(
+            f"Gurobi failed at time {state['current_time']} with termination condition "
+            f"{result.solver.termination_condition}. Falling back to zero action.",
+            RuntimeWarning,
+        )
+        return {'HeatPowerRoom1': 0.0, 'HeatPowerRoom2': 0.0, 'VentilationON': 0}
 
     # ── Guard against infeasible / failed solves ──────────────────────────────
     # if result.solver.termination_condition in (

@@ -66,7 +66,7 @@ for day in range(E_days):
         decision = select_action(state)
 
         # VERIFY FEASIBILITY
-        #decision = action = check_and_sanitize_action(select_action, state, power_max)
+        decision = action = check_and_sanitize_action(select_action, state, power_max)
         is_feasible = check_feasibility(decision, power_max)
         if not is_feasible:
             print(f"Day {day}, Time {t}: Infeasible! Using dummy.")
