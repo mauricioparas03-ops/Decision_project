@@ -30,7 +30,7 @@ def check_and_sanitize_action(select_action, state, PowerMax):
       5. If anything fails → return dummy action.
 
     Inputs:
-      - policy: object with .select_action(state)
+      - select_action: callable taking state and returning an action dict
       - state: dictionary
       - PowerMax: dictionary like {1: max_room1, 2: max_room2}
 
@@ -82,14 +82,14 @@ def check_and_sanitize_action(select_action, state, PowerMax):
 
 ### Example use
 
-class MyPolicy:
-    def select_action(self, state):
-        return {"HeatPowerRoom1": 50, "HeatPowerRoom2": -330, "VentilationON": 'something_crazy'}
+# class MyPolicy:
+#     def select_action(self, state):
+#         return {"HeatPowerRoom1": 50, "HeatPowerRoom2": -330, "VentilationON": 'something_crazy'}
 
-policy = MyPolicy()
+# policy = MyPolicy()
 
-state = {"T1": 21} #replace with a proper state dictionary
-PowerMax = {1: 3.0, 2: 3.0}
+# state = {"T1": 21} #replace with a proper state dictionary
+# PowerMax = {1: 3.0, 2: 3.0}
 
-action = check_and_sanitize_action(policy, state, PowerMax)
-print(action)
+# action = check_and_sanitize_action(policy, state, PowerMax)
+# print(action)
