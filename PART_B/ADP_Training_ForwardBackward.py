@@ -1,6 +1,8 @@
 import numpy as np
 from pyomo.environ import *
 from sklearn.linear_model import LinearRegression
+import matplotlib
+matplotlib.use('Agg')
 
 from EnvFunctions import apply_dynamics
 from Data.PriceProcessRestaurant import price_model 
@@ -207,5 +209,6 @@ for i in range(ITERATIONS):
 # Final result output
 print("\nVFA_WEIGHTS_FORWARD_BACKWARD = {")
 for t in range(T_HOURS):
-    print(f"    {t}: {current_weights[t]},")
+    clean_weights = {k: round(float(v), 4) for k, v in current_weights[t].items()}
+    print(f"    {t}: {clean_weights},")
 print("}")
