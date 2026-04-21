@@ -15,7 +15,15 @@ K_SAMPLES = 5             # Scenarios for the Expected Future Cost (Monte Carlo)
 T_HOURS = 10
 
 data = get_fixed_data()
-feature_cols = ["T1", "T2", "H", "price_t", "vent_counter", "low_override_r1", "low_override_r2"]
+feature_cols = [
+    "T1", 
+    "T2", 
+    "H", 
+    "price_t", 
+    "vent_counter", 
+    "low_override_r1", 
+    "low_override_r2"
+]
 
 # Initialize containers
 states_by_time = {t: [] for t in range(T_HOURS)}
