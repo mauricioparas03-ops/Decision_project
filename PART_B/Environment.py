@@ -3,7 +3,8 @@ from policies.dummy_policy import select_action as dummy_action
 #Import your policy here:
 #from policies.dummy_policy import select_action
 #from policies.multiSP_policy import select_action
-from policies.lookahead_policy import select_action
+#from policies.lookahead_policy import select_action
+from policies.SP_policy import select_action
 
 from Data.v2_SystemCharacteristics import get_fixed_data
 import pandas as pd

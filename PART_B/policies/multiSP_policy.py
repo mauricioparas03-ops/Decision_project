@@ -29,10 +29,10 @@ from pyomo.environ import (
 from pyomo.opt import TerminationCondition
 
 # ── Hyper-parameters ───────────────────────────────────────────────────────────
-HORIZON_MULTI = 3    # lookahead steps (must be >= 3 due to vent-inertia)
+HORIZON_MULTI = 4    # lookahead steps (must be >= 3 due to vent-inertia)
 GEN_SCENARIOS = 500  # raw Monte Carlo paths before tree clustering
 N_BRANCHES    = 3    # branches per node in the scenario tree / not currently being used, replaced by BRANCHING_FACTORS
-BRANCHING_FACTORS = [10,4,1] 
+BRANCHING_FACTORS = [10, 4, 2, 1] 
 
 # =============================================================================
 # 1. SYSTEM PARAMETERS
@@ -537,7 +537,7 @@ def build_multisp_model(current_state, tree, horizon):
     m.u = Var(m.RN_int, domain=Binary)   # 1 → low-temp overrule active
     m.w = Var(m.RN_int, domain=Binary)   # 1 → temperature recovered to T_OK
     m.y = Var(m.RN_int, domain=Binary)   # 1 → high-temp overrule active
-    m.y_low = Var(m.RN_int, domain=Binary) # 1 -> T is below T_low
+
     # ── State variables (all nodes) ───────────────────────────────────────────
     m.T_in = Var(m.R * m.N, domain=NonNegativeReals)
     m.Hum  = Var(m.N,        domain=NonNegativeReals)
@@ -615,39 +615,21 @@ def build_multisp_model(current_state, tree, horizon):
     m.HumDyn = Constraint(m.N, rule=hum_dynamics)
 
     # ── Overrule controller: LOW temperature ──────────────────────────────────
-    #EQN 8&9
-    # 1. Strict Detection of Low Temperature (y_low) 
-    def y_low_lower(m, r, nid):
-        # Forces y_low=1 when T < Tmin
-        return m.T_in[r, nid] >= m.Tmin - M * m.y_low[r, nid]
-    m.YLowLower = Constraint(m.RN_int, rule=y_low_lower)
+    def u_activation(m, r, nid):
+        return m.T_in[r, nid] >= m.Tmin - M * m.u[r, nid]
+    m.UActivation = Constraint(m.RN_int, rule=u_activation)
 
-    def y_low_upper(m, r, nid):
-        # Forces y_low=0 when T >= Tmin
-        return m.T_in[r, nid] <= m.Tmin + M * (1 - m.y_low[r, nid])
-    m.YLowUpper = Constraint(m.RN_int, rule=y_low_upper)
-    # def u_activation(m, r, nid):
-    #   return m.T_in[r, nid] >= m.Tmin - M * m.u[r, nid]
-    # m.UActivation = Constraint(m.RN_int, rule=u_activation)
-
-    #EQN 10&11
-    # 2. Strict Detection of Recovery Temperature (w)
-    def w_deactivation_lower(m, r, nid):
-        # Forces w=1 when T >= Tok
+    def w_deactivation(m, r, nid):
         return m.T_in[r, nid] >= m.Tok - M * (1 - m.w[r, nid])
-    m.WDeactivationLower = Constraint(m.RN_int, rule=w_deactivation_lower)
-
-    def w_deactivation_upper(m, r, nid):
-        # Forces w=0 when T < Tok
-        return m.T_in[r, nid] <= m.Tok + M * m.w[r, nid]
-    m.WDeactivationUpper = Constraint(m.RN_int, rule=w_deactivation_upper)
-    # def w_deactivation(m, r, nid):
-    #     return m.T_in[r, nid] >= m.Tok - M * (1 - m.w[r, nid])
-    # m.WDeactivation = Constraint(m.RN_int, rule=w_deactivation)
+    m.WDeactivation = Constraint(m.RN_int, rule=w_deactivation)
 
     def u_persistence(m, r, nid):
         pid = tree[nid]['parent']
         if pid is None or pid == 0:
+            # Initialise from real system overrule state
+            init_u = 1 if current_state.get(f'low_override_r{r}', 0) else 0
+            m.u[r, nid].fix(init_u)
+            m.w[r, nid].fix(0)
             return Constraint.Skip
         return m.u[r, nid] >= m.u[r, pid] - m.w[r, nid]
     m.UPersistence = Constraint(m.RN_int, rule=u_persistence)
@@ -657,18 +639,9 @@ def build_multisp_model(current_state, tree, horizon):
     m.HeatMaxOverrule = Constraint(m.RN_int, rule=heat_max_when_overrule)
 
     # ── Overrule controller: HIGH temperature ─────────────────────────────────
-    def y_activation_lower(m, r, nid):
-        # Forces y=1 when T > Thigh
+    def y_activation(m, r, nid):
         return m.T_in[r, nid] <= m.Thigh + M * m.y[r, nid]
-    m.YActivationLower = Constraint(m.RN_int, rule=y_activation_lower)
-
-    def y_activation_upper(m, r, nid):
-        # Forces y=0 when T <= Thigh
-        return m.T_in[r, nid] >= m.Thigh - M * (1 - m.y[r, nid])
-    m.YActivationUpper = Constraint(m.RN_int, rule=y_activation_upper)
-    # def y_activation(m, r, nid):
-    #     return m.T_in[r, nid] <= m.Thigh + M * m.y[r, nid]
-    # m.YActivation = Constraint(m.RN_int, rule=y_activation)
+    m.YActivation = Constraint(m.RN_int, rule=y_activation)
 
     def heat_off_when_overrule(m, r, nid):
         return m.Heat[r, nid] <= m.Pr * (1 - m.y[r, nid])
@@ -678,34 +651,6 @@ def build_multisp_model(current_state, tree, horizon):
     def vent_humidity_overrule(m, nid):
         return m.Hum[nid] <= m.Hhigh + M * m.Vent[nid]
     m.VentHumOverrule = Constraint(m.N_int, rule=vent_humidity_overrule)
-
-    # __ State update for overrule controller _________________________________
-    #EQN 12,13,15,16
-    def temp_lower_than_tmin_1(m, r, nid):
-        # Must turn ON if it gets too cold
-        return m.u[r, nid] >= m.y_low[r, nid]
-    m.UStateLogic1 = Constraint(m.RN_int, rule=temp_lower_than_tmin_1)
-
-    def temp_higher_than_tok(m, r, nid):
-        pid = tree[nid]['parent']
-        # Cannot turn ON unless it is too cold
-        if pid is None or pid == 0:
-            return Constraint.Skip
-        return m.u[r, nid] <= m.u[r, pid] + m.y_low[r, nid]
-    m.UStateLogic3 = Constraint(m.RN_int, rule=temp_higher_than_tok)
-
-    def temp_higher_than_tok_2(m, r, nid):
-        # Must turn OFF if it reaches Tok
-        return m.u[r, nid] <= 1 - m.w[r, nid]
-    m.UStateLogic4 = Constraint(m.RN_int, rule=temp_higher_than_tok_2)
-
-    def overrule_init(m, r, nid):
-        # At t=0, fix u to match the real system's overrule state
-        if nid == 0:
-            init_u = 1 if current_state.get(f'low_override_r{r}', 0) else 0
-            return m.u[r, nid] == init_u
-        return Constraint.Skip
-    m.OverruleInit = Constraint(m.RN_int, rule=overrule_init)
 
     # ── Ventilation inertia: 3-hour minimum ON time ───────────────────────────
     def on_off_exclusivity(m, nid):
@@ -788,24 +733,6 @@ def multi_SP_policy(state):
     v_status = 1 if vc > 0 else 0
 
     # ── Generate raw Monte-Carlo scenarios ────────────────────────────────────
-
-    # price_dict, occ_dict, _ = generate_scenarios(
-    #     price_now   = state['price_t'],
-    #     price_prev  = p_prev,
-    #     occ_r1_now  = state['Occ1'],
-    #     occ_r2_now  = state['Occ2'],
-    #     horizon =  horizon,
-    #     n_scenarios= GEN_SCENARIOS,
-    #     rng         = rng,
-    # )
-
-    # # ── Build scenario tree ───────────────────────────────────────────────────
-    # tree = cluster_scenarios_tree2(
-    #     price_dict, occ_dict,
-    #     n_branches = N_BRANCHES,
-    #     horizon             = horizon,
-    #     scenarios_to_generate = GEN_SCENARIOS
-    # )
 
     price_dict, occ_dict, _ = generate_tree_scenarios(
         price_now   = state['price_t'],

@@ -104,12 +104,10 @@ def generate_expected_trajectories(price_now, price_prev, occ_r1_now, occ_r2_now
     -------
     price_dict   : {t: float}        – price at lookahead step t
     occ_dict     : {(r, t): float}   – occupancy of room r at step t
-    hum_occ_dict : {t: float}        – total occupancy at step t
     """
     price_sum = np.zeros(horizon)
     occ1_sum = np.zeros(horizon)
     occ2_sum = np.zeros(horizon)
-    tot_occ_sum = np.zeros(horizon)
 
     n_scenarios = max(1, int(n_scenarios))
 
@@ -126,7 +124,6 @@ def generate_expected_trajectories(price_now, price_prev, occ_r1_now, occ_r2_now
             price_sum[t] += p_next
             occ1_sum[t] += o1_next
             occ2_sum[t] += o2_next
-            tot_occ_sum[t] += o1_next + o2_next
 
             p_prev, p_cur = p_cur, p_next
             o1_cur, o2_cur = o1_next, o2_next
@@ -134,14 +131,12 @@ def generate_expected_trajectories(price_now, price_prev, occ_r1_now, occ_r2_now
     expected_prices_trajectory = price_sum / n_scenarios
     expected_occ1_trajectory = occ1_sum / n_scenarios
     expected_occ2_trajectory = occ2_sum / n_scenarios
-    expected_tot_occ_trajectory = tot_occ_sum / n_scenarios
 
     price_dict = {t: float(expected_prices_trajectory[t]) for t in range(horizon)}
     occ_dict = {(1, t): float(expected_occ1_trajectory[t]) for t in range(horizon)}
     occ_dict.update({(2, t): float(expected_occ2_trajectory[t]) for t in range(horizon)})
-    hum_occ_dict = {t: float(expected_tot_occ_trajectory[t]) for t in range(horizon)}
 
-    return price_dict, occ_dict, hum_occ_dict
+    return price_dict, occ_dict
 
 
 # =============================================================================
@@ -169,7 +164,6 @@ def build_lookahead_model(current_state, price_dict, occ_dict,
     """
     d      = DATA
     _num_timeslots = int(d['num_timeslots'])
-    M      = 200.0
 
     m = ConcreteModel()
 
@@ -208,11 +202,6 @@ def build_lookahead_model(current_state, price_dict, occ_dict,
     m.M_hum = Param(initialize=100)
     m.U_vent = Param(initialize=3) # Minimum ventilation up-time
 
-    def is_day_start():
-        if current_state['current_time'] == 0:
-            return True
-
-
     # ── Decision variables ────────────────────────────────────────────────────
     m.Vent = Var(m.T, domain=Binary)    # Ventilation ON/OFF
     m.s    = Var(m.T, domain=Binary)    # Ventilation startup signal
@@ -230,12 +219,7 @@ def build_lookahead_model(current_state, price_dict, occ_dict,
 
     # ── Temperature dynamics ──────────────────────────────────────────────────
     def temp_dynamics(m, r, t):
-        current_hour = int(current_state['current_time']) + t
-
         if t == 0:
-            return m.T_in[r, t] == m.Tinit[r]
-
-        if current_hour % _num_timeslots == 0:
             return m.T_in[r, t] == m.Tinit[r]
 
         t_prev = t - 1
@@ -254,12 +238,7 @@ def build_lookahead_model(current_state, price_dict, occ_dict,
 
     # ── Humidity dynamics ─────────────────────────────────────────────────────
     def hum_dynamics(m, t):
-        current_hour = int(current_state['current_time']) + t
-
         if t == 0:
-            return m.Hum[t] == m.Hinit
-
-        if current_hour % _num_timeslots == 0:
             return m.Hum[t] == m.Hinit
 
         else:
@@ -384,7 +363,7 @@ def lookahead_policy(state):
     # v_status = 1 if vc > 0 else 0
 
     # ── Generate one sample path ──────────────────────────────────────────────
-    price_dict, occ_dict, hum_occ_dict = generate_expected_trajectories(
+    price_dict, occ_dict = generate_expected_trajectories(
         price_now   = state['price_t'],
         price_prev  = state['price_previous'],
         occ_r1_now  = state['Occ1'],
