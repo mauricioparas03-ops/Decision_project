@@ -21,10 +21,12 @@ Design choices
 
 from unittest import result
 import warnings
+from pathlib import Path
 
 from pyomo.opt import TerminationCondition
 
 import numpy as np
+import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 
@@ -44,6 +46,81 @@ from Data.OccupancyProcessRestaurant import next_occupancy_levels
 HORIZON       = 4    # lookahead steps  (must be >= 3 due to vent-inertia)
 GEN_SCENARIOS = 50  # Monte-Carlo draws before clustering
 N_SCENARIOS   = 10   # K-Means clusters (representative scenarios)
+
+_CLUSTERED_CACHE = None
+
+
+def _load_clustered_cache():
+    """
+    Load clustered scenarios from CSV once and cache them.
+
+    Returns
+    -------
+    tuple | None
+        (price_matrix, occ1_matrix, occ2_matrix, probabilities) or None if files are missing.
+    """
+    global _CLUSTERED_CACHE
+    if _CLUSTERED_CACHE is not None:
+        return _CLUSTERED_CACHE
+
+    data_dir = Path(__file__).resolve().parents[1] / "Data"
+    ts_path = data_dir / "clustered_scenarios_timeseries.csv"
+    prob_path = data_dir / "clustered_scenarios_probabilities.csv"
+
+    if not ts_path.exists():
+        _CLUSTERED_CACHE = None
+        return None
+
+    ts_df = pd.read_csv(ts_path)
+    if "hour" not in ts_df.columns or "cluster_id" not in ts_df.columns:
+        _CLUSTERED_CACHE = None
+        return None
+
+    ts_df = ts_df.sort_values(["hour", "cluster_id"]).copy()
+
+    price_matrix = (
+        ts_df.pivot(index="hour", columns="cluster_id", values="price")
+        .sort_index(axis=0)
+        .sort_index(axis=1)
+        .to_numpy(dtype=float)
+    )
+    occ1_matrix = (
+        ts_df.pivot(index="hour", columns="cluster_id", values="occ1")
+        .sort_index(axis=0)
+        .sort_index(axis=1)
+        .to_numpy(dtype=float)
+    )
+    occ2_matrix = (
+        ts_df.pivot(index="hour", columns="cluster_id", values="occ2")
+        .sort_index(axis=0)
+        .sort_index(axis=1)
+        .to_numpy(dtype=float)
+    )
+
+    if prob_path.exists():
+        probabilities = (
+            pd.read_csv(prob_path)
+            .sort_values("cluster_id")['probability']
+            .to_numpy(dtype=float)
+        )
+    elif "probability" in ts_df.columns:
+        probabilities = (
+            ts_df[["cluster_id", "probability"]]
+            .drop_duplicates(subset=["cluster_id"])
+            .sort_values("cluster_id")["probability"]
+            .to_numpy(dtype=float)
+        )
+    else:
+        _CLUSTERED_CACHE = None
+        return None
+
+    if probabilities.size == 0 or probabilities.sum() <= 0:
+        _CLUSTERED_CACHE = None
+        return None
+
+    probabilities = probabilities / probabilities.sum()
+    _CLUSTERED_CACHE = (price_matrix, occ1_matrix, occ2_matrix, probabilities)
+    return _CLUSTERED_CACHE
 
 # =============================================================================
 # 1. SYSTEM PARAMETERS
@@ -145,6 +222,33 @@ def cluster_scenarios(price_dict, occ_dict, n_clusters, horizon, scenarios_to_ge
             price_dict_clus[t, s]   = float(centroids[s, t])
             occ_dict_clus[1, t, s]  = float(max(0.0, centroids[s, horizon + t]))
             occ_dict_clus[2, t, s]  = float(max(0.0, centroids[s, 2*horizon + t]))
+
+    return price_dict_clus, occ_dict_clus, probabilities
+
+
+def _clustered_scenarios_from_csv(horizon):
+    """
+    Build clustered scenario dicts from the precomputed CSVs.
+
+    Falls back to None if the CSVs are missing or incompatible.
+    """
+    clustered = _load_clustered_cache()
+    if clustered is None:
+        return None
+
+    price_matrix, occ1_matrix, occ2_matrix, probabilities = clustered
+    if horizon > price_matrix.shape[0]:
+        horizon = price_matrix.shape[0]
+
+    n_clusters = price_matrix.shape[1]
+    price_dict_clus = {}
+    occ_dict_clus = {}
+
+    for s in range(n_clusters):
+        for t in range(horizon):
+            price_dict_clus[t, s] = float(price_matrix[t, s])
+            occ_dict_clus[1, t, s] = float(occ1_matrix[t, s])
+            occ_dict_clus[2, t, s] = float(occ2_matrix[t, s])
 
     return price_dict_clus, occ_dict_clus, probabilities
 
@@ -421,24 +525,29 @@ def SP_policy(state):
     # vc       = state.get('vent_counter', 0)
     # v_status = 1 if vc > 0 else 0
 
-    # ── Generate raw Monte-Carlo scenarios ────────────────────────────────────
-    price_dict, occ_dict = generate_scenarios(
-        price_now   = state['price_t'],
-        price_prev  = state['price_previous'],
-        occ_r1_now  = state['Occ1'],
-        occ_r2_now  = state['Occ2'],
-        horizon     = horizon,
-        n_scenarios = GEN_SCENARIOS
-    )
+    clustered = _clustered_scenarios_from_csv(horizon)
+    # if clustered is None:
+        # # ── Generate raw Monte-Carlo scenarios ────────────────────────────────────
+        # price_dict, occ_dict = generate_scenarios(
+        #     price_now   = state['price_t'],
+        #     price_prev  = state['price_previous'],
+        #     occ_r1_now  = state['Occ1'],
+        #     occ_r2_now  = state['Occ2'],
+        #     horizon     = horizon,
+        #     n_scenarios = GEN_SCENARIOS
+        # )
 
-    # ── Cluster to N_SCENARIOS representative centroids ───────────────────────
-    n_clus = min(N_SCENARIOS, GEN_SCENARIOS)
-    price_dict_clus, occ_dict_clus, probabilities = cluster_scenarios(
-            price_dict, occ_dict,
-            n_clusters            = n_clus,
-            horizon               = horizon,
-            scenarios_to_generate = GEN_SCENARIOS,
-        )
+        # # ── Cluster to N_SCENARIOS representative centroids ───────────────────────
+        # n_clus = min(N_SCENARIOS, GEN_SCENARIOS)
+        # price_dict_clus, occ_dict_clus, probabilities = cluster_scenarios(
+        #         price_dict, occ_dict,
+        #         n_clusters            = n_clus,
+        #         horizon               = horizon,
+        #         scenarios_to_generate = GEN_SCENARIOS,
+            # )
+    # else:
+    price_dict_clus, occ_dict_clus, probabilities = clustered
+    n_clus = len(probabilities)
 
     # ── Assemble current state for the MILP ──────────────────────────────────
     # milp_state = {
