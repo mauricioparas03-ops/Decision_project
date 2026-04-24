@@ -14,7 +14,7 @@ from policies.dummy_policy import select_action as dummy_action
 # 1. HYPERPARAMETERS & SETTINGS
 # =============================================================================
 # We solve a MILP in the Forward Pass too, so we keep simulation days balanced.
-NUM_DAYS_SIMULATION = 50  
+NUM_DAYS_SIMULATION = 100  
 K_SAMPLES = 5             # Scenarios for Bellman backup
 ITERATIONS = 12           # Number of Forward-Backward loops
 T_HOURS = 10
