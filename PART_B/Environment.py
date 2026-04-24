@@ -3,7 +3,8 @@ from policies.dummy_policy import select_action as dummy_action
 #Import your policy here:
 #from policies.dummy_policy import select_action
 #from policies.multiSP_policy import select_action
-from policies.lookahead_policy import select_action
+#from policies.lookahead_policy import select_action
+from policies.SP_policy import select_action
 
 from Data.v2_SystemCharacteristics import get_fixed_data
 import pandas as pd
@@ -39,9 +40,6 @@ for day in range(E_days):
     day_occ2 = occ2[day * T_hours : (day + 1) * T_hours]
     day_prices = prices[day * T_hours : (day + 1) * T_hours]
     day_prev_price = daily_previous_prices[day] #first hour of the day, to be used as price_previous in the initial state
-
-    #IF TESTING OPTIMAL IN HINDSIGHT POLICY, REMEMBER TO CALL initialize_policy(day_prices, day_occ1, day_occ2) BEFORE THE SIMULATION LOOP
-    #initialize_policy(data, day_prices, day_occ1, day_occ2)
 
     state = {
         "T1": data['T1'], #Temperature of room 1

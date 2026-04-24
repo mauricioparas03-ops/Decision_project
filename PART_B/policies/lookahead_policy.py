@@ -17,8 +17,10 @@ import os
 os.environ['OMP_NUM_THREADS'] = '1'
 
 import warnings
+from pathlib import Path
 
 import numpy as np
+import pandas as pd
 
 from pyomo.environ import (
     ConcreteModel, Set, Param, Var, Objective, Constraint,
@@ -31,7 +33,113 @@ from Data.PriceProcessRestaurant import price_model
 
 # ── Hyper-parameters ───────────────────────────────────────────────────────────
 HORIZON = 4   # lookahead steps (must be >= 3 due to vent-inertia constraint)
-N_SCENARIOS = 20
+N_SCENARIOS = 1 # special case with just 1 scenario
+
+_CLUSTERED_CACHE = None
+
+
+def _load_clustered_cache():
+    """
+    Load clustered scenarios from CSV once and cache them.
+
+    Returns
+    -------
+    tuple | None
+        (price_matrix, occ1_matrix, occ2_matrix, probabilities) or None if files are missing.
+    """
+    global _CLUSTERED_CACHE
+    if _CLUSTERED_CACHE is not None:
+        return _CLUSTERED_CACHE
+
+    data_dir = Path(__file__).resolve().parents[1] / "Data"
+    ts_path = data_dir / "clustered_scenarios_timeseries.csv"
+    prob_path = data_dir / "clustered_scenarios_probabilities.csv"
+
+    if not ts_path.exists():
+        _CLUSTERED_CACHE = None
+        return None
+
+    ts_df = pd.read_csv(ts_path)
+    ts_df = ts_df.sort_values(["hour", "cluster_id"]).copy()
+
+    price_matrix = (
+        ts_df.pivot(index="hour", columns="cluster_id", values="price")
+        .sort_index(axis=0)
+        .sort_index(axis=1)
+        .to_numpy(dtype=float)
+    )
+    occ1_matrix = (
+        ts_df.pivot(index="hour", columns="cluster_id", values="occ1")
+        .sort_index(axis=0)
+        .sort_index(axis=1)
+        .to_numpy(dtype=float)
+    )
+    occ2_matrix = (
+        ts_df.pivot(index="hour", columns="cluster_id", values="occ2")
+        .sort_index(axis=0)
+        .sort_index(axis=1)
+        .to_numpy(dtype=float)
+    )
+
+    if prob_path.exists():
+        probabilities = (
+            pd.read_csv(prob_path)
+            .sort_values("cluster_id")["probability"]
+            .to_numpy(dtype=float)
+        )
+    elif "probability" in ts_df.columns:
+        probabilities = (
+            ts_df[["cluster_id", "probability"]]
+            .drop_duplicates(subset=["cluster_id"])
+            .sort_values("cluster_id")["probability"]
+            .to_numpy(dtype=float)
+        )
+    else:
+        _CLUSTERED_CACHE = None
+        return None
+
+    if probabilities.sum() <= 0:
+        _CLUSTERED_CACHE = None
+        return None
+
+    probabilities = probabilities / probabilities.sum()
+    _CLUSTERED_CACHE = (price_matrix, occ1_matrix, occ2_matrix, probabilities)
+    return _CLUSTERED_CACHE
+
+
+def _expected_trajectories_from_clustered(state, horizon):
+    """
+    Build expected trajectories from pre-clustered scenarios.
+    Falls back to Monte Carlo generation when clustered CSVs are unavailable.
+    """
+    clustered = _load_clustered_cache()
+    # if clustered is None:
+    #     return generate_expected_trajectories(
+    #         price_now=state['price_t'],
+    #         price_prev=state['price_previous'],
+    #         occ_r1_now=state['Occ1'],
+    #         occ_r2_now=state['Occ2'],
+    #         horizon=horizon,
+    #     )
+
+    price_matrix, occ1_matrix, occ2_matrix, probabilities = clustered
+    n_hours = price_matrix.shape[0]
+    start_hour = int(state['current_time'])
+
+    expected_prices = np.zeros(horizon)
+    expected_occ1 = np.zeros(horizon)
+    expected_occ2 = np.zeros(horizon)
+
+    for t in range(horizon):
+        idx = (start_hour + t) % n_hours
+        expected_prices[t] = float(np.dot(price_matrix[idx], probabilities))
+        expected_occ1[t] = float(np.dot(occ1_matrix[idx], probabilities))
+        expected_occ2[t] = float(np.dot(occ2_matrix[idx], probabilities))
+
+    price_dict = {t: float(expected_prices[t]) for t in range(horizon)}
+    occ_dict = {(1, t): float(expected_occ1[t]) for t in range(horizon)}
+    occ_dict.update({(2, t): float(expected_occ2[t]) for t in range(horizon)})
+    return price_dict, occ_dict
 
 # =============================================================================
 # 1. SYSTEM PARAMETERS
@@ -95,53 +203,48 @@ DATA = get_fixed_data()
 # 3. MULTI-SCENARIO PATH GENERATION
 # =============================================================================
 
-def generate_expected_trajectories(price_now, price_prev, occ_r1_now, occ_r2_now,
-                                   horizon, n_scenarios=N_SCENARIOS):
-    """
-    Sample multiple lookahead paths and average them step by step.
+# def generate_expected_trajectories(price_now, price_prev, occ_r1_now, occ_r2_now,
+#                                    horizon, n_scenarios=N_SCENARIOS):
+#     """
+#     Sample multiple lookahead paths and average them step by step.
 
-    Returns
-    -------
-    price_dict   : {t: float}        – price at lookahead step t
-    occ_dict     : {(r, t): float}   – occupancy of room r at step t
-    hum_occ_dict : {t: float}        – total occupancy at step t
-    """
-    price_sum = np.zeros(horizon)
-    occ1_sum = np.zeros(horizon)
-    occ2_sum = np.zeros(horizon)
-    tot_occ_sum = np.zeros(horizon)
+#     Returns
+#     -------
+#     price_dict   : {t: float}        – price at lookahead step t
+#     occ_dict     : {(r, t): float}   – occupancy of room r at step t
+#     """
+#     price_sum = np.zeros(horizon)
+#     occ1_sum = np.zeros(horizon)
+#     occ2_sum = np.zeros(horizon)
 
-    n_scenarios = max(1, int(n_scenarios))
+#     n_scenarios = max(1, int(n_scenarios))
 
-    for _ in range(n_scenarios):
-        p_cur = price_now
-        p_prev = price_prev
-        o1_cur = occ_r1_now
-        o2_cur = occ_r2_now
+#     for _ in range(n_scenarios):
+#         p_cur = price_now
+#         p_prev = price_prev
+#         o1_cur = occ_r1_now
+#         o2_cur = occ_r2_now
 
-        for t in range(horizon):
-            p_next = price_model(p_cur, p_prev)
-            o1_next, o2_next = next_occupancy_levels(o1_cur, o2_cur)
+#         for t in range(horizon):
+#             p_next = price_model(p_cur, p_prev)
+#             o1_next, o2_next = next_occupancy_levels(o1_cur, o2_cur)
 
-            price_sum[t] += p_next
-            occ1_sum[t] += o1_next
-            occ2_sum[t] += o2_next
-            tot_occ_sum[t] += o1_next + o2_next
+#             price_sum[t] += p_next
+#             occ1_sum[t] += o1_next
+#             occ2_sum[t] += o2_next
 
-            p_prev, p_cur = p_cur, p_next
-            o1_cur, o2_cur = o1_next, o2_next
+#             p_prev, p_cur = p_cur, p_next
+#             o1_cur, o2_cur = o1_next, o2_next
 
-    expected_prices_trajectory = price_sum / n_scenarios
-    expected_occ1_trajectory = occ1_sum / n_scenarios
-    expected_occ2_trajectory = occ2_sum / n_scenarios
-    expected_tot_occ_trajectory = tot_occ_sum / n_scenarios
+#     expected_prices_trajectory = price_sum / n_scenarios
+#     expected_occ1_trajectory = occ1_sum / n_scenarios
+#     expected_occ2_trajectory = occ2_sum / n_scenarios
 
-    price_dict = {t: float(expected_prices_trajectory[t]) for t in range(horizon)}
-    occ_dict = {(1, t): float(expected_occ1_trajectory[t]) for t in range(horizon)}
-    occ_dict.update({(2, t): float(expected_occ2_trajectory[t]) for t in range(horizon)})
-    hum_occ_dict = {t: float(expected_tot_occ_trajectory[t]) for t in range(horizon)}
+#     price_dict = {t: float(expected_prices_trajectory[t]) for t in range(horizon)}
+#     occ_dict = {(1, t): float(expected_occ1_trajectory[t]) for t in range(horizon)}
+#     occ_dict.update({(2, t): float(expected_occ2_trajectory[t]) for t in range(horizon)})
 
-    return price_dict, occ_dict, hum_occ_dict
+#     return price_dict, occ_dict
 
 
 # =============================================================================
@@ -169,7 +272,6 @@ def build_lookahead_model(current_state, price_dict, occ_dict,
     """
     d      = DATA
     _num_timeslots = int(d['num_timeslots'])
-    M      = 200.0
 
     m = ConcreteModel()
 
@@ -208,11 +310,6 @@ def build_lookahead_model(current_state, price_dict, occ_dict,
     m.M_hum = Param(initialize=100)
     m.U_vent = Param(initialize=3) # Minimum ventilation up-time
 
-    def is_day_start():
-        if current_state['current_time'] == 0:
-            return True
-
-
     # ── Decision variables ────────────────────────────────────────────────────
     m.Vent = Var(m.T, domain=Binary)    # Ventilation ON/OFF
     m.s    = Var(m.T, domain=Binary)    # Ventilation startup signal
@@ -230,12 +327,7 @@ def build_lookahead_model(current_state, price_dict, occ_dict,
 
     # ── Temperature dynamics ──────────────────────────────────────────────────
     def temp_dynamics(m, r, t):
-        current_hour = int(current_state['current_time']) + t
-
         if t == 0:
-            return m.T_in[r, t] == m.Tinit[r]
-
-        if current_hour % _num_timeslots == 0:
             return m.T_in[r, t] == m.Tinit[r]
 
         t_prev = t - 1
@@ -254,12 +346,7 @@ def build_lookahead_model(current_state, price_dict, occ_dict,
 
     # ── Humidity dynamics ─────────────────────────────────────────────────────
     def hum_dynamics(m, t):
-        current_hour = int(current_state['current_time']) + t
-
         if t == 0:
-            return m.Hum[t] == m.Hinit
-
-        if current_hour % _num_timeslots == 0:
             return m.Hum[t] == m.Hinit
 
         else:
@@ -383,14 +470,8 @@ def lookahead_policy(state):
     # vc       = state['vent_counter']
     # v_status = 1 if vc > 0 else 0
 
-    # ── Generate one sample path ──────────────────────────────────────────────
-    price_dict, occ_dict, hum_occ_dict = generate_expected_trajectories(
-        price_now   = state['price_t'],
-        price_prev  = state['price_previous'],
-        occ_r1_now  = state['Occ1'],
-        occ_r2_now  = state['Occ2'],
-        horizon     = horizon,
-    )
+    # ── Build expected trajectories from clustered scenarios (or fallback) ───
+    price_dict, occ_dict = _expected_trajectories_from_clustered(state, horizon)
 
     # ── Assemble current state for the MILP ──────────────────────────────────
     # milp_state = {
