@@ -10,9 +10,9 @@ from Data.OccupancyProcessRestaurant import next_occupancy_levels
 from Data.v2_SystemCharacteristics import get_fixed_data
 from policies.dummy_policy import select_action as dummy_action
 
-# =============================================================================
-# 1. HYPERPARAMETERS & SETTINGS
-# =============================================================================
+
+# HYPERPARAMETERS & SETTINGS
+
 # We solve a MILP in the Forward Pass too, so we keep simulation days balanced.
 NUM_DAYS_SIMULATION = 100  
 K_SAMPLES = 5             # Scenarios for Bellman backup
@@ -21,14 +21,20 @@ T_HOURS = 10
 EPSILON = 0.15            # Probability of choosing a random action (Exploration)
 
 data = get_fixed_data()
-feature_cols = ["T1", "T2", "H", "price_t", "vent_counter", "low_override_r1", "low_override_r2"]
+feature_cols = ["T1", 
+                "T2", 
+                "H", 
+                "price_t", 
+                "vent_counter", 
+                "low_override_r1", 
+                "low_override_r2"
+                ]
 
 # Initialize weights to zero (they will evolve through iterations)
 current_weights = {t: {feat: 0.0 for feat in feature_cols + ['intercept']} for t in range(T_HOURS)}
 
-# =============================================================================
-# 2. CORE OPTIMIZATION FUNCTION (MILP)
-# =============================================================================
+
+# CORE OPTIMIZATION FUNCTION (MILP)
 
 def solve_one_step_milp(state, weights_next, mode="value"):
     """
@@ -137,16 +143,15 @@ def solve_one_step_milp(state, weights_next, mode="value"):
     else:
         return {"HeatPowerRoom1": value(m.p1), "HeatPowerRoom2": value(m.p2), "VentilationON": int(value(m.v))}
 
-# =============================================================================
-# 3. MAIN FORWARD-BACKWARD LOOP
-# =============================================================================
+
+# MAIN FORWARD-BACKWARD LOOP
 
 for i in range(ITERATIONS):
     print(f"\n--- FORWARD-BACKWARD ITERATION {i} ---")
     
-    # -------------------------------------------------------------------------
+    
     # FORWARD PASS: Sampling states based on the CURRENT policy (weights)
-    # -------------------------------------------------------------------------
+ 
     print(f"Forward Pass: Simulating {NUM_DAYS_SIMULATION} days with current VFA...")
     states_by_time = {t: [] for t in range(T_HOURS)}
     
@@ -180,9 +185,9 @@ for i in range(ITERATIONS):
                 state['Occ1'], state['Occ2'] = n_o1, n_o2
                 state['price_previous'], state['price_t'] = state['price_t'], n_p
 
-    # -------------------------------------------------------------------------
+    
     # BACKWARD PASS: Updating VFA weights (Fitted Value Iteration)
-    # -------------------------------------------------------------------------
+   
     print("Backward Pass: Updating VFA weights using newly visited states...")
     for t in reversed(range(T_HOURS)):
         X, y = [], []

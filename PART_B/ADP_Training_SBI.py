@@ -8,7 +8,7 @@ from Data.OccupancyProcessRestaurant import next_occupancy_levels
 from Data.v2_SystemCharacteristics import get_fixed_data
 from policies.dummy_policy import select_action as dummy_action
 
-# --- HYPERPARAMETERS ---
+# HYPERPARAMETERS 
 # We can simulate many days because it's purely mathematical (no CSV limits)
 N_STATES_TO_SAMPLE = 500  
 K_SAMPLES = 5             # Scenarios for the Expected Future Cost (Monte Carlo)
@@ -30,9 +30,9 @@ states_by_time = {t: [] for t in range(T_HOURS)}
 VFA_WEIGHTS = {t: {feat: 0.0 for feat in feature_cols} for t in range(T_HOURS)}
 for t in range(T_HOURS): VFA_WEIGHTS[t]['intercept'] = 0.0
 
-# ============================================================================
-# 1. FORWARD PASS: TRAJECTORY SAMPLING (Virtual Lab Simulation)
-# ============================================================================
+
+# FORWARD PASS: TRAJECTORY SAMPLING (Virtual Lab Simulation)
+
 print(f"Generating {N_STATES_TO_SAMPLE} virtual trajectories in the mathematical lab...")
 for day in range(N_STATES_TO_SAMPLE):
     
@@ -68,9 +68,9 @@ for day in range(N_STATES_TO_SAMPLE):
             state['price_previous'] = state['price_t']
             state['price_t'] = next_p
 
-# ============================================================================
-# 2. TARGET CALCULATION (1-step Bellman Equation with Trust Region)
-# ============================================================================
+
+# TARGET CALCULATION (1-step Bellman Equation with Trust Region)
+
 def solve_one_step(state, future_scenarios, weights_next_step):
     m = ConcreteModel()
     
@@ -154,9 +154,9 @@ def solve_one_step(state, future_scenarios, weights_next_step):
     
     return value(m.obj)
 
-# ============================================================================
-# 3. STOCHASTIC BACKWARD INDUCTION (Single backward sweep)
-# ============================================================================
+
+# STOCHASTIC BACKWARD INDUCTION (Single backward sweep)
+
 print("Starting Stochastic Backward Induction...")
 for t in reversed(range(T_HOURS)):
     print(f"Training weights for t = {t}...")
@@ -187,7 +187,7 @@ for t in reversed(range(T_HOURS)):
             VFA_WEIGHTS[t][feat] = model.coef_[idx]
         VFA_WEIGHTS[t]['intercept'] = model.intercept_
 
-print("\n--- RISULTATO TRAINING SBI ---")
+print("\n--- RESULT TRAINING SBI ---")
 print("VFA_WEIGHTS = {")
 for t in range(T_HOURS):
     print(f"    {t}: {{", end="")
