@@ -83,4 +83,6 @@ for day in range(E_days):
     # Save the total cost of this day
     daily_costs[day] = cost_of_this_day
 
+    print(decision)
+
 print(f"Cost average over {E_days} days: {np.mean(daily_costs):.2f}")

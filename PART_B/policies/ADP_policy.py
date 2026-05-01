@@ -3,16 +3,16 @@ from Data.v2_SystemCharacteristics import get_fixed_data
 
 # definitive wheights for the VFA, obtained after training on 50 days with a linear regression on the collected data
 VFA_WEIGHTS = {
-    0: {'T1': 0.0, 'T2': 0.0, 'H': 0.0, 'price_t': 51.3728, 'vent_counter': 0.0, 'low_override_r1': 0.0, 'low_override_r2': 0.0, 'intercept': -191.5912},
-    1: {'T1': -2.7901, 'T2': -0.5863, 'H': 0.835, 'price_t': 33.8934, 'vent_counter': 52.4942, 'low_override_r1': 0.0, 'low_override_r2': 0.0, 'intercept': -75.2014},
-    2: {'T1': -0.8048, 'T2': -3.3098, 'H': 2.1594, 'price_t': 25.82, 'vent_counter': 35.4966, 'low_override_r1': 25.9099, 'low_override_r2': 24.4389, 'intercept': -98.7928},
-    3: {'T1': -4.1458, 'T2': -4.8981, 'H': 1.6324, 'price_t': 19.4702, 'vent_counter': 15.4122, 'low_override_r1': 18.9862, 'low_override_r2': 16.4113, 'intercept': 48.0769},
-    4: {'T1': -4.3233, 'T2': -4.9462, 'H': 0.7123, 'price_t': 16.8954, 'vent_counter': 2.1046, 'low_override_r1': 13.0023, 'low_override_r2': 18.6706, 'intercept': 117.9639},
-    5: {'T1': -6.2256, 'T2': -5.6349, 'H': 0.3761, 'price_t': 13.5614, 'vent_counter': 1.6285, 'low_override_r1': 11.4398, 'low_override_r2': 19.7059, 'intercept': 189.7004},
-    6: {'T1': -4.2615, 'T2': -8.7981, 'H': 0.0629, 'price_t': 10.0495, 'vent_counter': -1.3456, 'low_override_r1': 11.5519, 'low_override_r2': 22.1424, 'intercept': 240.5934},
-    7: {'T1': -3.3492, 'T2': -3.9544, 'H': 0.1912, 'price_t': 7.6714, 'vent_counter': 2.4896, 'low_override_r1': 13.7517, 'low_override_r2': 18.5131, 'intercept': 124.9596},
-    8: {'T1': -4.1116, 'T2': 0.0028, 'H': 0.272, 'price_t': 4.3042, 'vent_counter': 1.5037, 'low_override_r1': 18.4393, 'low_override_r2': 10.7806, 'intercept': 65.9349},
-    9: {'T1': 0.8028, 'T2': -0.769, 'H': 0.1152, 'price_t': 2.6102, 'vent_counter': 3.3287, 'low_override_r1': 11.2746, 'low_override_r2': 14.6012, 'intercept': -15.5835},
+    0: {'T1': 0.0, 'T2': 0.0, 'H': 0.0, 'price_t': 42.2762, 'vent_counter': 0.0, 'low_override_r1': 0.0, 'low_override_r2': 0.0, 'intercept': -78.7346},
+    1: {'T1': 2.2541, 'T2': -3.3547, 'H': 7.0211, 'price_t': 29.0863, 'vent_counter': 114.0406, 'low_override_r1': 0.0, 'low_override_r2': 0.0, 'intercept': -332.6881},
+    2: {'T1': -2.2899, 'T2': -1.1332, 'H': 3.408, 'price_t': 24.4825, 'vent_counter': 46.9638, 'low_override_r1': 18.5807, 'low_override_r2': 27.6635, 'intercept': -125.4662},
+    3: {'T1': -2.6706, 'T2': -0.3753, 'H': 2.0655, 'price_t': 21.4215, 'vent_counter': 22.3914, 'low_override_r1': 18.9324, 'low_override_r2': 17.3069, 'intercept': -67.0107},
+    4: {'T1': -2.151, 'T2': -4.7714, 'H': 0.7994, 'price_t': 17.5064, 'vent_counter': 1.878, 'low_override_r1': 9.9414, 'low_override_r2': 13.6788, 'intercept': 94.3381},
+    5: {'T1': -5.9482, 'T2': -0.3145, 'H': 0.7534, 'price_t': 13.0689, 'vent_counter': 2.4829, 'low_override_r1': 10.459, 'low_override_r2': 10.0252, 'intercept': 85.3074},
+    6: {'T1': -4.8076, 'T2': -2.0748, 'H': 0.5798, 'price_t': 7.7821, 'vent_counter': -0.6056, 'low_override_r1': 3.8225, 'low_override_r2': 17.4337, 'intercept': 117.1084},
+    7: {'T1': -2.4897, 'T2': -1.1346, 'H': 0.4077, 'price_t': 4.7985, 'vent_counter': -1.7045, 'low_override_r1': 17.0495, 'low_override_r2': 28.5045, 'intercept': 52.5686},
+    8: {'T1': -0.6193, 'T2': -0.8051, 'H': 0.4395, 'price_t': 4.5277, 'vent_counter': 1.7981, 'low_override_r1': 28.2602, 'low_override_r2': 22.8713, 'intercept': -5.571},
+    9: {'T1': -0.078, 'T2': 0.3872, 'H': 0.2915, 'price_t': 2.2303, 'vent_counter': 2.197, 'low_override_r1': 13.4133, 'low_override_r2': 14.1389, 'intercept': -30.6712},
 }
 
 def select_action(state):
