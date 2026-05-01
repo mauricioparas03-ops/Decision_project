@@ -16,6 +16,7 @@ Design choices
 """
 
 import os
+import warnings
 os.environ['OMP_NUM_THREADS'] = '1'
 
 import numpy as np
@@ -28,6 +29,9 @@ from pyomo.environ import (
 )
 from pyomo.opt import TerminationCondition
 
+from Data.v2_SystemCharacteristics import get_fixed_data
+
+
 # ── Hyper-parameters ───────────────────────────────────────────────────────────
 HORIZON_MULTI = 4    # lookahead steps (must be >= 3 due to vent-inertia)
 GEN_SCENARIOS = 500  # raw Monte Carlo paths before tree clustering
@@ -37,38 +41,6 @@ BRANCHING_FACTORS = [10, 4, 2, 1]
 # =============================================================================
 # 1. SYSTEM PARAMETERS
 # =============================================================================
-
-def get_fixed_data():
-    """
-    Returns the fixed system characteristics.
-    THIS FUNCTION SHOULD NOT BE CHANGED.
-    """
-    num_timeslots = 10
-    return {
-        'num_timeslots'               : num_timeslots,
-        'initial_temperature'         : 21.0,
-        'previous_initial_temperature': 21.0,
-        'initial_humidity'            : 40.0,
-        'heating_max_power'           : 3.0,    # Pr  (kW)
-        'heat_exchange_coeff'         : 0.6,    # ζ_exch
-        'heating_efficiency_coeff'    : 1.0,    # ζ_conv
-        'thermal_loss_coeff'          : 0.1,    # ζ_loss
-        'heat_vent_coeff'             : 0.7,    # ζ_cool
-        'heat_occupancy_coeff'        : 0.02,   # ζ_occ
-        'temp_min_comfort_threshold'  : 18.0,   # T_low
-        'temp_OK_threshold'           : 22.0,   # T_OK
-        'temp_max_comfort_threshold'  : 26.0,   # T_high
-        'humidity_threshold'          : 70.0,   # H_high
-        'vent_min_up_time'            : 3,      # minimum consecutive ON hours
-        'ventilation_power'           : 2.0,    # P_vent (kW)
-        'humidity_occupancy_coeff'    : 0.18,   # η_occ
-        'humidity_vent_coeff'         : 15.0,   # η_vent
-        'outdoor_temperature'         : [
-            3 * np.sin(2 * np.pi * t / num_timeslots - np.pi / 2)
-            for t in range(num_timeslots)
-        ],
-    }
-
 
 DATA = get_fixed_data()
 
@@ -464,8 +436,8 @@ def build_multisp_model(current_state, tree, horizon):
 
     Parameters
     ----------
-    current_state : dict – keys: T_in_r1, T_in_r2, humidity,
-                                 vent_prev, vent_on_count,
+    current_state : dict – keys: T1, T2, H,
+                                 vent_counter,
                                  low_override_r1, low_override_r2
     tree          : dict  node_id -> {t, parent, children, centroid, path_prob}
     horizon       : int
@@ -475,12 +447,18 @@ def build_multisp_model(current_state, tree, horizon):
     Pyomo ConcreteModel (unsolved)
     """
     d = DATA
-    M = 200.0
 
-    T_init = {1: current_state['T_in_r1'], 2: current_state['T_in_r2']}
-    H_init = current_state['humidity']
-    v_prev = int(current_state['vent_prev'])
-    v_on_h = int(current_state.get('vent_on_count', 0))
+    T_init = {1: current_state['T1'], 2: current_state['T2']}
+    H_init = current_state['H']
+    # v_prev = int(current_state['vent_prev'])
+    # v_on_h = int(current_state.get('vent_on_count', 0))
+    vent_counter = int(current_state['vent_counter'])
+    v_prev       = 1 if vent_counter > 0 else 0
+    v_on_h       = vent_counter  
+    low_override = {
+        1: int(current_state['low_override_r1']),
+        2: int(current_state['low_override_r2']),
+    }
 
     # ── Node sets ─────────────────────────────────────────────────────────────
     all_nodes      = list(tree.keys())
@@ -506,22 +484,40 @@ def build_multisp_model(current_state, tree, horizon):
     m.RN_int = m.R * m.N_int
 
     # ── Physical parameters ───────────────────────────────────────────────────
-    m.Pr    = Param(initialize=d['heating_max_power'])
-    m.Zexch = Param(initialize=d['heat_exchange_coeff'])
-    m.Zconv = Param(initialize=d['heating_efficiency_coeff'])
-    m.Zloss = Param(initialize=d['thermal_loss_coeff'])
-    m.Zcool = Param(initialize=d['heat_vent_coeff'])
-    m.Zocc  = Param(initialize=d['heat_occupancy_coeff'])
-    m.Tmin  = Param(initialize=d['temp_min_comfort_threshold'])
-    m.Tok   = Param(initialize=d['temp_OK_threshold'])
-    m.Thigh = Param(initialize=d['temp_max_comfort_threshold'])
-    m.Hhigh = Param(initialize=d['humidity_threshold'])
-    m.Pvent = Param(initialize=d['ventilation_power'])
-    m.Hocc  = Param(initialize=d['humidity_occupancy_coeff'])
-    m.Hvent = Param(initialize=d['humidity_vent_coeff'])
-    m.Tout  = Param(range(horizon),
-                    initialize={t: d['outdoor_temperature'][t] for t in range(horizon)})
-
+    # m.Pr    = Param(initialize=d['heating_max_power'])
+    # m.Zexch = Param(initialize=d['heat_exchange_coeff'])
+    # m.Zconv = Param(initialize=d['heating_efficiency_coeff'])
+    # m.Zloss = Param(initialize=d['thermal_loss_coeff'])
+    # m.Zcool = Param(initialize=d['heat_vent_coeff'])
+    # m.Zocc  = Param(initialize=d['heat_occupancy_coeff'])
+    # m.Tmin  = Param(initialize=d['temp_min_comfort_threshold'])
+    # m.Tok   = Param(initialize=d['temp_OK_threshold'])
+    # m.Thigh = Param(initialize=d['temp_max_comfort_threshold'])
+    # m.Hhigh = Param(initialize=d['humidity_threshold'])
+    # m.Pvent = Param(initialize=d['ventilation_power'])
+    # m.Hocc  = Param(initialize=d['humidity_occupancy_coeff'])
+    # m.Hvent = Param(initialize=d['humidity_vent_coeff'])
+    # m.Tout  = Param(range(horizon),
+    #                 initialize={t: d['outdoor_temperature'][t] for t in range(horizon)})
+    m.Pr     = Param(initialize=d['heating_max_power'])
+    m.Pvent  = Param(initialize=d['ventilation_power'])
+    m.Zexch  = Param(initialize=d['heat_exchange_coeff'])
+    m.Zconv  = Param(initialize=d['heating_efficiency_coeff'])
+    m.Zloss  = Param(initialize=d['thermal_loss_coeff'])
+    m.Zcool  = Param(initialize=d['heat_vent_coeff'])
+    m.Zocc   = Param(initialize=d['heat_occupancy_coeff'])
+    m.Hocc   = Param(initialize=d['humidity_occupancy_coeff'])
+    m.Hvent  = Param(initialize=d['humidity_vent_coeff'])
+    m.Tmin   = Param(initialize=d['temp_min_comfort_threshold'])
+    m.Tok    = Param(initialize=d['temp_OK_threshold'])
+    m.Thigh  = Param(initialize=d['temp_max_comfort_threshold'])
+    m.Hhigh  = Param(initialize=d['humidity_threshold'])
+    m.M_temp = Param(initialize=100.0)
+    m.M_hum  = Param(initialize=100.0)
+    m.U_vent = Param(initialize=d['vent_min_up_time'])
+    m.Tout   = Param(range(horizon),
+                     initialize={t: d['outdoor_temperature'][t] for t in range(horizon)})
+    
     m.prices = Param(m.N_int, initialize=price_by_node)
     m.HumOcc = Param(m.N_int, initialize=humocc_by_node)
     m.O1     = Param(m.N_int, initialize=occ1_by_node)
@@ -529,15 +525,22 @@ def build_multisp_model(current_state, tree, horizon):
     m.pi     = Param(m.N_leaf, initialize=path_prob_leaf)
 
     # ── Decision variables (internal nodes only) ──────────────────────────────
-    m.Heat = Var(m.RN_int, domain=NonNegativeReals, bounds=(0, d['heating_max_power']))
-    m.Vent = Var(m.N_int,  domain=Binary)
-    m.Uon  = Var(m.N_int,  domain=Binary)
-    m.Uoff = Var(m.N_int,  domain=Binary)
+    # m.Heat = Var(m.RN_int, domain=NonNegativeReals, bounds=(0, d['heating_max_power']))
+    # m.Vent = Var(m.N_int,  domain=Binary)
+    # m.Uon  = Var(m.N_int,  domain=Binary)
+    # m.Uoff = Var(m.N_int,  domain=Binary)
 
-    m.u = Var(m.RN_int, domain=Binary)   # 1 → low-temp overrule active
-    m.w = Var(m.RN_int, domain=Binary)   # 1 → temperature recovered to T_OK
-    m.y = Var(m.RN_int, domain=Binary)   # 1 → high-temp overrule active
-
+    # m.u = Var(m.RN_int, domain=Binary)   # 1 → low-temp overrule active
+    # m.w = Var(m.RN_int, domain=Binary)   # 1 → temperature recovered to T_OK
+    # m.y = Var(m.RN_int, domain=Binary)   # 1 → high-temp overrule active
+    m.Heat   = Var(m.RN_int, domain=NonNegativeReals, bounds=(0, d['heating_max_power']))
+    m.Vent   = Var(m.N_int,  domain=Binary)
+    m.Vstart = Var(m.N_int,  domain=Binary)
+     # Overrule indicator variables
+    m.y_low  = Var(m.RN_int, domain=Binary)  
+    m.y_ok   = Var(m.RN_int, domain=Binary)  
+    m.y_high = Var(m.RN_int, domain=Binary)   
+    m.u      = Var(m.RN_int, domain=Binary) 
     # ── State variables (all nodes) ───────────────────────────────────────────
     m.T_in = Var(m.R * m.N, domain=NonNegativeReals)
     m.Hum  = Var(m.N,        domain=NonNegativeReals)
@@ -614,73 +617,103 @@ def build_multisp_model(current_state, tree, horizon):
         )
     m.HumDyn = Constraint(m.N, rule=hum_dynamics)
 
-    # ── Overrule controller: LOW temperature ──────────────────────────────────
-    def u_activation(m, r, nid):
-        return m.T_in[r, nid] >= m.Tmin - M * m.u[r, nid]
-    m.UActivation = Constraint(m.RN_int, rule=u_activation)
-
-    def w_deactivation(m, r, nid):
-        return m.T_in[r, nid] >= m.Tok - M * (1 - m.w[r, nid])
-    m.WDeactivation = Constraint(m.RN_int, rule=w_deactivation)
-
-    def u_persistence(m, r, nid):
+        # ── 1. High temperature: forced heating shutdown ──────────────────────────
+    #   y_high = 1  ⟺  T_in > Thigh
+    m.CThigh1 = Constraint(m.RN_int,
+        rule=lambda m, r, nid:
+            m.T_in[r, nid] >= m.Thigh - m.M_temp * (1 - m.y_high[r, nid]))
+    m.CThigh2 = Constraint(m.RN_int,
+        rule=lambda m, r, nid:
+            m.T_in[r, nid] <= m.Thigh + m.M_temp * m.y_high[r, nid])
+    m.CHeatOff = Constraint(m.RN_int,
+        rule=lambda m, r, nid:
+             m.Heat[r, nid] <= m.Pr * (1 - m.y_high[r, nid]))
+    
+    # ── 2. Low temperature: overrule activation ───────────────────────────────
+    #   y_low = 1  ⟺  T_in < Tmin
+    m.CTlow1 = Constraint(m.RN_int,
+        rule=lambda m, r, nid:
+            m.T_in[r, nid] <= m.Tmin + m.M_temp * (1 - m.y_low[r, nid]))
+    m.CTlow2 = Constraint(m.RN_int,
+        rule=lambda m, r, nid:
+            m.T_in[r, nid] >= m.Tmin - m.M_temp * m.y_low[r, nid])
+ 
+    # ── 3. Temperature-OK: overrule deactivation ──────────────────────────────
+    #   y_ok = 1  ⟺  T_in >= Tok
+    m.CTok1 = Constraint(m.RN_int,
+        rule=lambda m, r, nid:
+            m.T_in[r, nid] >= m.Tok - m.M_temp * (1 - m.y_ok[r, nid]))
+    m.CTok2 = Constraint(m.RN_int,
+        rule=lambda m, r, nid:
+            m.T_in[r, nid] <= m.Tok + m.M_temp * m.y_ok[r, nid])
+ 
+    # ── 4. Overrule memory (u) propagated through tree parent pointers ────────
+    #   CU1 : u >= y_low
+    m.CU1 = Constraint(m.RN_int,
+        rule=lambda m, r, nid: m.u[r, nid] >= m.y_low[r, nid])
+ 
+    #   CU2 : u <= u_prev + y_low
+    def c_u2(m, r, nid):
+        pid    = tree[nid]['parent']
+        u_prev = low_override[r] if (pid is None or pid == 0) else m.u[r, pid]
+        return m.u[r, nid] <= u_prev + m.y_low[r, nid]
+    m.CU2 = Constraint(m.RN_int, rule=c_u2)
+ 
+    #   CU3 : u >= u_prev - y_ok   (persist until temperature recovers)
+    def c_u3(m, r, nid):
+        pid    = tree[nid]['parent']
+        u_prev = low_override[r] if (pid is None or pid == 0) else m.u[r, pid]
+        return m.u[r, nid] >= u_prev - m.y_ok[r, nid]
+    m.CU3 = Constraint(m.RN_int, rule=c_u3)
+ 
+    #   CU4 : u <= 1 - y_ok        (deactivate as soon as T >= Tok)
+    m.CU4 = Constraint(m.RN_int,
+        rule=lambda m, r, nid: m.u[r, nid] <= 1 - m.y_ok[r, nid])
+ 
+    #   Full heating power required during overrule
+    m.CHeatMax = Constraint(m.RN_int,
+        rule=lambda m, r, nid: m.Heat[r, nid] >= m.Pr * m.u[r, nid])
+ 
+    # ─────────────────────────────────────────────────────────────────────────
+    # HUMIDITY OVERRULE
+    # ─────────────────────────────────────────────────────────────────────────
+    m.CVentHum = Constraint(m.N_int,
+        rule=lambda m, nid: m.Hum[nid] <= m.Hhigh + m.M_hum * m.Vent[nid])
+ 
+    # ─────────────────────────────────────────────────────────────────────────
+    # VENTILATION INERTIA  (SP-style Vstart startup signal)
+    # ─────────────────────────────────────────────────────────────────────────
+ 
+    # CVstart1 : Vstart[nid] >= Vent[nid] - Vent[parent]
+    def c_vstart1(m, nid):
         pid = tree[nid]['parent']
-        if pid is None or pid == 0:
-            # Initialise from real system overrule state
-            init_u = 1 if current_state.get(f'low_override_r{r}', 0) else 0
-            m.u[r, nid].fix(init_u)
-            m.w[r, nid].fix(0)
-            return Constraint.Skip
-        return m.u[r, nid] >= m.u[r, pid] - m.w[r, nid]
-    m.UPersistence = Constraint(m.RN_int, rule=u_persistence)
-
-    def heat_max_when_overrule(m, r, nid):
-        return m.Heat[r, nid] >= m.Pr * m.u[r, nid]
-    m.HeatMaxOverrule = Constraint(m.RN_int, rule=heat_max_when_overrule)
-
-    # ── Overrule controller: HIGH temperature ─────────────────────────────────
-    def y_activation(m, r, nid):
-        return m.T_in[r, nid] <= m.Thigh + M * m.y[r, nid]
-    m.YActivation = Constraint(m.RN_int, rule=y_activation)
-
-    def heat_off_when_overrule(m, r, nid):
-        return m.Heat[r, nid] <= m.Pr * (1 - m.y[r, nid])
-    m.HeatOffOverrule = Constraint(m.RN_int, rule=heat_off_when_overrule)
-
-    # ── Humidity overrule: force ventilation ON when humid ────────────────────
-    def vent_humidity_overrule(m, nid):
-        return m.Hum[nid] <= m.Hhigh + M * m.Vent[nid]
-    m.VentHumOverrule = Constraint(m.N_int, rule=vent_humidity_overrule)
-
-    # ── Ventilation inertia: 3-hour minimum ON time ───────────────────────────
-    def on_off_exclusivity(m, nid):
-        return m.Uon[nid] + m.Uoff[nid] <= 1
-    m.OnOffExcl = Constraint(m.N_int, rule=on_off_exclusivity)
-
-    def uoff_bound(m, nid):
-        return m.Uoff[nid] <= 1 - m.Vent[nid]
-    m.UoffBound = Constraint(m.N_int, rule=uoff_bound)
-
-    def uon_bound(m, nid):
-        return m.Uon[nid] <= 1 - m.Vent[nid]
-    m.UonBound = Constraint(m.N_int, rule=uon_bound)
-
+        v_p = v_prev if (pid is None or pid == 0) else m.Vent[pid]
+        return m.Vstart[nid] >= m.Vent[nid] - v_p
+    m.CVstart1 = Constraint(m.N_int, rule=c_vstart1)
+ 
+    # CVstart2 : Vstart[nid] <= Vent[nid]
+    m.CVstart2 = Constraint(m.N_int,
+        rule=lambda m, nid: m.Vstart[nid] <= m.Vent[nid])
+ 
+    # CVstart3 : Vstart[nid] <= 1 - Vent[parent]
+    def c_vstart3(m, nid):
+        pid = tree[nid]['parent']
+        v_p = v_prev if (pid is None or pid == 0) else m.Vent[pid]
+        return m.Vstart[nid] <= 1 - v_p
+    m.CVstart3 = Constraint(m.N_int, rule=c_vstart3)
+ 
+    # MinVentOn : Σ_{k in descendant chain} Vent[k] >= |chain| * Vstart[nid]
     def min_uptime(m, nid):
-        L     = d['vent_min_up_time']
-        chain = [k for k in _descendants_chain(tree, nid, L) if k in internal_set]
-        pid   = tree[nid]['parent']
-        v_p   = v_prev if (pid is None or pid == 0) else m.Vent[pid]
-        return sum(m.Vent[k] for k in chain) >= len(chain) * (m.Vent[nid] - v_p)
-    m.MinUptime = Constraint(m.N_int, rule=min_uptime)
-
-    # Carry-over inertia from previous real hours
-    if v_prev == 1 and v_on_h < 3:
-        forced_on = 3 - v_on_h
-        for nid in internal_nodes:
-            if tree[nid]['t'] <= forced_on:
-                m.Vent[nid].fix(1)
-
-    # ── Objective: E[cost along each leaf path] ───────────────────────────────
+        chain = [k for k in _descendants_chain(tree, nid, m.U_vent)
+                 if k in internal_set]
+        if not chain:
+            return Constraint.Skip
+        return sum(m.Vent[k] for k in chain) >= len(chain) * m.Vstart[nid]
+    m.MinVentOn = Constraint(m.N_int, rule=min_uptime)
+ 
+    # ─────────────────────────────────────────────────────────────────────────
+    # OBJECTIVE: E[cost along each leaf path]
+    # ─────────────────────────────────────────────────────────────────────────
     def objective(m):
         return sum(
             m.pi[leaf] * sum(
@@ -693,6 +726,86 @@ def build_multisp_model(current_state, tree, horizon):
             for leaf in leaf_nodes
         )
     m.obj = Objective(rule=objective, sense=minimize)
+    return m
+    # # ── Overrule controller: LOW temperature ──────────────────────────────────
+    # def u_activation(m, r, nid):
+    #     return m.T_in[r, nid] >= m.Tmin - M * m.u[r, nid]
+    # m.UActivation = Constraint(m.RN_int, rule=u_activation)
+
+    # def w_deactivation(m, r, nid):
+    #     return m.T_in[r, nid] >= m.Tok - M * (1 - m.w[r, nid])
+    # m.WDeactivation = Constraint(m.RN_int, rule=w_deactivation)
+
+    # def u_persistence(m, r, nid):
+    #     pid = tree[nid]['parent']
+    #     if pid is None or pid == 0:
+    #         # Initialise from real system overrule state
+    #         init_u = 1 if current_state.get(f'low_override_r{r}', 0) else 0
+    #         m.u[r, nid].fix(init_u)
+    #         m.w[r, nid].fix(0)
+    #         return Constraint.Skip
+    #     return m.u[r, nid] >= m.u[r, pid] - m.w[r, nid]
+    # m.UPersistence = Constraint(m.RN_int, rule=u_persistence)
+
+    # def heat_max_when_overrule(m, r, nid):
+    #     return m.Heat[r, nid] >= m.Pr * m.u[r, nid]
+    # m.HeatMaxOverrule = Constraint(m.RN_int, rule=heat_max_when_overrule)
+
+    # # ── Overrule controller: HIGH temperature ─────────────────────────────────
+    # def y_activation(m, r, nid):
+    #     return m.T_in[r, nid] <= m.Thigh + M * m.y[r, nid]
+    # m.YActivation = Constraint(m.RN_int, rule=y_activation)
+
+    # def heat_off_when_overrule(m, r, nid):
+    #     return m.Heat[r, nid] <= m.Pr * (1 - m.y[r, nid])
+    # m.HeatOffOverrule = Constraint(m.RN_int, rule=heat_off_when_overrule)
+
+    # # ── Humidity overrule: force ventilation ON when humid ────────────────────
+    # def vent_humidity_overrule(m, nid):
+    #     return m.Hum[nid] <= m.Hhigh + M * m.Vent[nid]
+    # m.VentHumOverrule = Constraint(m.N_int, rule=vent_humidity_overrule)
+
+    # # ── Ventilation inertia: 3-hour minimum ON time ───────────────────────────
+    # def on_off_exclusivity(m, nid):
+    #     return m.Uon[nid] + m.Uoff[nid] <= 1
+    # m.OnOffExcl = Constraint(m.N_int, rule=on_off_exclusivity)
+
+    # def uoff_bound(m, nid):
+    #     return m.Uoff[nid] <= 1 - m.Vent[nid]
+    # m.UoffBound = Constraint(m.N_int, rule=uoff_bound)
+
+    # def uon_bound(m, nid):
+    #     return m.Uon[nid] <= 1 - m.Vent[nid]
+    # m.UonBound = Constraint(m.N_int, rule=uon_bound)
+
+    # def min_uptime(m, nid):
+    #     L     = d['vent_min_up_time']
+    #     chain = [k for k in _descendants_chain(tree, nid, L) if k in internal_set]
+    #     pid   = tree[nid]['parent']
+    #     v_p   = v_prev if (pid is None or pid == 0) else m.Vent[pid]
+    #     return sum(m.Vent[k] for k in chain) >= len(chain) * (m.Vent[nid] - v_p)
+    # m.MinUptime = Constraint(m.N_int, rule=min_uptime)
+
+    # # Carry-over inertia from previous real hours
+    # if v_prev == 1 and v_on_h < 3:
+    #     forced_on = 3 - v_on_h
+    #     for nid in internal_nodes:
+    #         if tree[nid]['t'] <= forced_on:
+    #             m.Vent[nid].fix(1)
+
+    # # ── Objective: E[cost along each leaf path] ───────────────────────────────
+    # def objective(m):
+    #     return sum(
+    #         m.pi[leaf] * sum(
+    #             m.prices[nid] * (
+    #                 sum(m.Heat[r, nid] for r in m.R)
+    #                 + m.Vent[nid] * m.Pvent
+    #             )
+    #             for nid in _path_to_root(tree, leaf)
+    #         )
+    #         for leaf in leaf_nodes
+    #     )
+    # m.obj = Objective(rule=objective, sense=minimize)
     return m
 
 
@@ -721,8 +834,8 @@ def multi_SP_policy(state):
     remaining = DATA['num_timeslots'] - t
     horizon   = min(HORIZON_MULTI, remaining)
 
-    if horizon <= 0:
-        return {'HeatPowerRoom1': 0.0, 'HeatPowerRoom2': 0.0, 'VentilationON': 0}
+    # if horizon <= 0:
+    #     return {'HeatPowerRoom1': 0.0, 'HeatPowerRoom2': 0.0, 'VentilationON': 0}
 
     # Reproducible per-timestep RNG
     rng    = np.random.default_rng(seed=42 + t)
@@ -752,22 +865,22 @@ def multi_SP_policy(state):
 
     # ── Guard: need at least one internal non-root node for decisions ─────────
     internal_nodes = [nid for nid, n in tree.items() if n['children'] and nid != 0]
-    if not internal_nodes:
-        return {'HeatPowerRoom1': 0.0, 'HeatPowerRoom2': 0.0, 'VentilationON': 0}
+    # if not internal_nodes:
+    #     return {'HeatPowerRoom1': 0.0, 'HeatPowerRoom2': 0.0, 'VentilationON': 0}
 
     # ── Assemble current state for the MILP ──────────────────────────────────
-    milp_state = {
-        'T_in_r1'        : state['T1'],
-        'T_in_r2'        : state['T2'],
-        'humidity'        : state['H'],
-        'vent_prev'       : v_status,
-        'vent_on_count'   : vc,
-        'low_override_r1' : state.get('low_override_r1', 0),
-        'low_override_r2' : state.get('low_override_r2', 0),
-    }
+    # milp_state = {
+    #     'T_in_r1'        : state['T1'],
+    #     'T_in_r2'        : state['T2'],
+    #     'humidity'        : state['H'],
+    #     'vent_prev'       : v_status,
+    #     'vent_on_count'   : vc,
+    #     'low_override_r1' : state.get('low_override_r1', 0),
+    #     'low_override_r2' : state.get('low_override_r2', 0),
+    # }
 
     # ── Build and solve ───────────────────────────────────────────────────────
-    model  = build_multisp_model(milp_state, tree, horizon)
+    model  = build_multisp_model(state, tree, horizon)
     solver = SolverFactory('gurobi_direct')
     solver.options['TimeLimit'] = 12
     solver.options['MIPGap']    = 0.02
@@ -776,10 +889,15 @@ def multi_SP_policy(state):
     result = solver.solve(model, tee=False)
 
     # ── Guard against infeasible / failed solves ──────────────────────────────
-    if result.solver.termination_condition in (
-            TerminationCondition.infeasible,
-            TerminationCondition.unknown,
-            TerminationCondition.error):
+    if result.solver.termination_condition not in (
+        TerminationCondition.optimal,
+        TerminationCondition.feasible,
+    ):
+        warnings.warn(
+            f"Gurobi failed at time {state['current_time']} with termination condition "
+            f"{result.solver.termination_condition}. Falling back to zero action.",
+            RuntimeWarning,
+        )
         return {'HeatPowerRoom1': 0.0, 'HeatPowerRoom2': 0.0, 'VentilationON': 0}
 
     # ── Extract first-stage decision ──────────────────────────────────────────
