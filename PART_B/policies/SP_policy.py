@@ -81,7 +81,7 @@ DATA = get_fixed_data()
 # 2. STOCHASTIC PROCESS MODELS
 # =============================================================================
 
-def price_model(current_price, previous_price, rng=None):
+def price_model(current_price, previous_price, rng):
     """
     One-step-ahead electricity price sample (AR(2)-like with mean reversion).
 
@@ -101,8 +101,7 @@ def price_model(current_price, previous_price, rng=None):
     price_floor        = 0.0
 
     mean_reversion = reversion_strength * (mean_price - current_price)
-    noise = (rng.normal(0, 0.5) if rng is not None
-             else np.random.normal(0, 0.5))
+    noise = rng.normal(0, 0.5) 
 
     next_price = (current_price
                   + 0.6 * (current_price - previous_price)
@@ -110,15 +109,14 @@ def price_model(current_price, previous_price, rng=None):
                   + noise)
 
     if next_price < 0:
-        rand_val = rng.random() if rng is not None else np.random.rand()
+        rand_val = rng.random() 
         if rand_val > 0.2:
-            next_price = (rng.uniform(0, mean_price * 0.3) if rng is not None
-                          else np.random.uniform(0, mean_price * 0.3))
+            next_price = rng.uniform(0, mean_price * 0.3) 
 
     return float(np.clip(next_price, price_floor, price_cap))
 
 
-def next_occupancy_levels(r1_current, r2_current, rng=None):
+def next_occupancy_levels(r1_current, r2_current, rng):
     """
     One-step-ahead occupancy sample for both rooms (coupled mean-reverting).
 
@@ -130,10 +128,8 @@ def next_occupancy_levels(r1_current, r2_current, rng=None):
     rev      = 0.25
     coupling = 0.1
 
-    noise_r1 = (rng.normal(0, 3.0) if rng is not None
-                else np.random.normal(0, 3.0))
-    noise_r2 = (rng.normal(0, 2.5) if rng is not None
-                else np.random.normal(0, 2.5))
+    noise_r1 = rng.normal(0, 3.0)
+    noise_r2 = rng.normal(0, 2.5)
 
     r1_next = (r1_current
                + rev      * (mean_r1 - r1_current)
@@ -192,7 +188,7 @@ def generate_scenarios(price_now, price_prev,
 # 4. SCENARIO CLUSTERING  (K-Means → weighted centroids)
 # =============================================================================
 
-def cluster_scenarios(price_dict, occ_dict, n_clusters, horizon, scenarios_to_generate):
+def cluster_scenarios(price_dict, occ_dict, n_clusters, horizon, scenarios_to_generate, cluster_seed):
     """
     Reduce *scenarios_to_generate* Monte-Carlo paths to *n_clusters*
     representative centroids via K-Means, returning Pyomo-ready dicts.
@@ -227,7 +223,7 @@ def cluster_scenarios(price_dict, occ_dict, n_clusters, horizon, scenarios_to_ge
     scaler   = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
-    km = KMeans(n_clusters=n_clusters, n_init=5, random_state=42)
+    km = KMeans(n_clusters=n_clusters, n_init=5, random_state=cluster_seed)
     km.fit(X_scaled)
 
     labels        = km.labels_
@@ -618,8 +614,9 @@ def SP_policy(state):
 
     # Make scenario generation reproducible per (day, timestep)
     #rng = np.random.default_rng(seed=int(state['current_time']) + 100)
-
-    rng = np.random.default_rng(seed=42 + state['current_time'])
+    t = state['current_time']
+    #rng = np.random.default_rng(seed=42 + state['current_time'])
+    rng  = np.random.default_rng(seed=42 + (state['current_day'] * 10) + t)
 
     t         = state['current_time']
     remaining = DATA['num_timeslots'] - t
@@ -654,6 +651,7 @@ def SP_policy(state):
             n_clusters            = n_clus,
             horizon               = horizon,
             scenarios_to_generate = GEN_SCENARIOS,
+            cluster_seed = 42 + state['current_day'] * 10 + t,
         )
 
     # ── Assemble current state for the MILP ──────────────────────────────────
@@ -674,6 +672,8 @@ def SP_policy(state):
     solver = SolverFactory('gurobi_direct')
     solver.options['TimeLimit'] = 12    # wall-clock cap (s)
     solver.options['MIPGap']    = 0.02  # 2 % optimality gap
+    solver.options['Seed']      = 42    # reproducibility for solver's random heuristics
+    solver.options['Threads']   = 1     # single-threaded for deterministic behavior
     result = solver.solve(model, tee=False)
 
     # Guard against infeasible/failed solves

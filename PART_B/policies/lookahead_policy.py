@@ -415,7 +415,7 @@ def lookahead_policy(state):
         return {'HeatPowerRoom1': 0.0, 'HeatPowerRoom2': 0.0, 'VentilationON': 0}
 
     # Reproducible per-timestep RNG
-    rng    = np.random.default_rng(seed=42 + t)
+    rng    = np.random.default_rng(seed=42 + (state['current_day'] * 10) + t)
     p_prev = state.get('price_previous') or 4.0
 
     # Ventilation status derived from counter
