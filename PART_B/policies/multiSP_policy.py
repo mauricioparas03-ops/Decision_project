@@ -35,8 +35,8 @@ from Data.v2_SystemCharacteristics import get_fixed_data
 # ── Hyper-parameters ───────────────────────────────────────────────────────────
 HORIZON_MULTI = 4    # lookahead steps (must be >= 3 due to vent-inertia)
 GEN_SCENARIOS = 500  # raw Monte Carlo paths before tree clustering
-N_BRANCHES    = 3    # branches per node in the scenario tree / not currently being used, replaced by BRANCHING_FACTORS
-BRANCHING_FACTORS = [10, 4, 2, 1] 
+N_CLUSTERS    = [1, 3,3,3]    
+BRANCHING_FACTORS = [10, 10, 10, 10] 
 
 # =============================================================================
 # 1. SYSTEM PARAMETERS
@@ -102,39 +102,62 @@ def next_occupancy_levels(r1_current, r2_current, rng=None):
 # 3. SCENARIO GENERATION
 # =============================================================================
 
-def generate_scenarios(price_now, price_prev,
-                       occ_r1_now, occ_r2_now,
-                       horizon, n_scenarios, rng):
-    """
-    Draw n_scenarios independent Monte-Carlo paths over horizon steps.
+# def generate_scenarios(price_now, price_prev,
+#                        occ_r1_now, occ_r2_now,
+#                        horizon, n_scenarios, rng):
+#     """
+#     Draw n_scenarios independent Monte-Carlo paths over horizon steps.
 
-    Returns
-    -------
-    price_dict   : {(t, s): float}
-    occ_dict     : {(r, t, s): float}
-    hum_occ_dict : {(t, s): float}
-    """
-    price_dict   = {}
-    occ_dict     = {}
-    hum_occ_dict = {}
+#     Returns
+#     -------
+#     price_dict   : {(t, s): float}
+#     occ_dict     : {(r, t, s): float}
+#     hum_occ_dict : {(t, s): float}
+#     """
+#     price_dict   = {}
+#     occ_dict     = {}
+#     hum_occ_dict = {}
+
+#     for s in range(n_scenarios):
+#         p_cur,  p_prev  = price_now,  price_prev
+#         o1_cur, o2_cur  = occ_r1_now, occ_r2_now
+
+#         for t in range(horizon):
+#             p_next           = price_model(p_cur, p_prev, rng)
+#             o1_next, o2_next = next_occupancy_levels(o1_cur, o2_cur, rng)
+
+#             price_dict[t, s]   = p_next
+#             occ_dict[1, t, s]  = o1_next
+#             occ_dict[2, t, s]  = o2_next
+#             hum_occ_dict[t, s] = o1_next + o2_next
+
+#             p_prev, p_cur   = p_cur,  p_next
+#             o1_cur, o2_cur  = o1_next, o2_next
+
+#     return price_dict, occ_dict, hum_occ_dict
+
+
+def generate_scenarios(price_now, price_prev, occ_r1_now, occ_r2_now, horizon, n_scenarios):
+    price_dict = {}
+    occ_dict = {}
 
     for s in range(n_scenarios):
-        p_cur,  p_prev  = price_now,  price_prev
-        o1_cur, o2_cur  = occ_r1_now, occ_r2_now
+        p_cur, p_prev = price_now, price_prev
+        o1_cur, o2_cur = occ_r1_now, occ_r2_now
 
         for t in range(horizon):
-            p_next           = price_model(p_cur, p_prev, rng)
-            o1_next, o2_next = next_occupancy_levels(o1_cur, o2_cur, rng)
+            p_next = price_model(p_cur, p_prev)
+            o1_next, o2_next = next_occupancy_levels(o1_cur, o2_cur)
 
-            price_dict[t, s]   = p_next
-            occ_dict[1, t, s]  = o1_next
-            occ_dict[2, t, s]  = o2_next
-            hum_occ_dict[t, s] = o1_next + o2_next
+            price_dict[t, s] = float(p_next)
+            occ_dict[1, t, s] = float(o1_next)
+            occ_dict[2, t, s] = float(o2_next)
 
-            p_prev, p_cur   = p_cur,  p_next
-            o1_cur, o2_cur  = o1_next, o2_next
+            p_prev, p_cur = p_cur, p_next
+            o1_cur, o2_cur = o1_next, o2_next
 
-    return price_dict, occ_dict, hum_occ_dict
+    return price_dict, occ_dict
+
 
 
 
@@ -164,7 +187,7 @@ def generate_tree_scenarios(price_now, price_prev, occ_r1_now, occ_r2_now,
 
     for t in range(horizon):
         # We only need to generate values for unique prefixes at this time step
-        unique_prefixes = set(idx[:t] for idx in scenario_indices)
+        unique_prefixes = sorted({idx[:t] for idx in scenario_indices})
         
         for prefix in unique_prefixes:
             # Get parent values
@@ -175,14 +198,14 @@ def generate_tree_scenarios(price_now, price_prev, occ_r1_now, occ_r2_now,
             for branch_idx in range(num_children):
                 current_prefix = prefix + (branch_idx,)
                 
-                # Draw from your models
+                # Draw from the models
                 p_next = price_model(p_cur, p_prev, rng)
                 o1_next, o2_next = next_occupancy_levels(o1_cur, o2_cur, rng)
                 
                 # Store node value
                 tree_nodes[(t, current_prefix)] = (p_next, p_cur, o1_next, o2_next)
 
-    # Finally, map the tree nodes back to the (t, s) format your model expects
+    # Finally, map the tree nodes back to the (t, s) format the model expects
     for s_int, path in enumerate(scenario_indices):
         for t in range(horizon):
             node_val = tree_nodes[(t, path[:t+1])]
@@ -198,100 +221,100 @@ def generate_tree_scenarios(price_now, price_prev, occ_r1_now, occ_r2_now,
 # 4. SCENARIO TREE CONSTRUCTION  (recursive conditional K-Means)
 # =============================================================================
 
-def cluster_scenarios_tree(price_dict, occ_dict, n_branches, horizon,
-                           scenarios_to_generate):
-    """
-    Build a scenario tree by recursive conditional K-Means clustering.
+# def cluster_scenarios_tree(price_dict, occ_dict, n_branches, horizon,
+#                            scenarios_to_generate):
+#     """
+#     Build a scenario tree by recursive conditional K-Means clustering.
 
-    At each stage t, clusters the t-th observation within each group of
-    scenarios that shared the same node at t-1.
+#     At each stage t, clusters the t-th observation within each group of
+#     scenarios that shared the same node at t-1.
 
-    Returns
-    -------
-    tree : dict  node_id -> {
-        't'        : int,
-        'parent'   : int or None,
-        'children' : list[int],
-        'scenarios': list[int],
-        'centroid' : dict  {'price', 'occ1', 'occ2', 'hum_occ'} or None (root),
-        'cond_prob': float,
-        'path_prob': float,
-    }
-    """
-    tree = {
-        0: {
-            't'        : 0,
-            'parent'   : None,
-            'children' : [],
-            'scenarios': list(range(scenarios_to_generate)),
-            'centroid' : None,
-            'cond_prob': 1.0,
-            'path_prob': 1.0,
-        }
-    }
+#     Returns
+#     -------
+#     tree : dict  node_id -> {
+#         't'        : int,
+#         'parent'   : int or None,
+#         'children' : list[int],
+#         'scenarios': list[int],
+#         'centroid' : dict  {'price', 'occ1', 'occ2', 'hum_occ'} or None (root),
+#         'cond_prob': float,
+#         'path_prob': float,
+#     }
+#     """
+#     tree = {
+#         0: {
+#             't'        : 0,
+#             'parent'   : None,
+#             'children' : [],
+#             'scenarios': list(range(scenarios_to_generate)),
+#             'centroid' : None,
+#             'cond_prob': 1.0,
+#             'path_prob': 1.0,
+#         }
+#     }
 
-    node_counter           = 1
-    nodes_at_current_stage = [0]
+#     node_counter           = 1
+#     nodes_at_current_stage = [0]
 
-    for t in range(horizon):
-        nodes_at_next_stage = []
+#     for t in range(horizon):
+#         nodes_at_next_stage = []
 
-        for parent_id in nodes_at_current_stage:
-            parent_node      = tree[parent_id]
-            member_scenarios = parent_node['scenarios']
-            n_parent         = len(member_scenarios)
-            k                = min(n_branches, n_parent)
+#         for parent_id in nodes_at_current_stage:
+#             parent_node      = tree[parent_id]
+#             member_scenarios = parent_node['scenarios']
+#             n_parent         = len(member_scenarios)
+#             k                = min(n_branches, n_parent)
 
-            X_t = np.array([
-                [price_dict[t, s], occ_dict[1, t, s], occ_dict[2, t, s]]
-                for s in member_scenarios
-            ])
+#             X_t = np.array([
+#                 [price_dict[t, s], occ_dict[1, t, s], occ_dict[2, t, s]]
+#                 for s in member_scenarios
+#             ])
 
-            scaler     = StandardScaler()
-            X_t_scaled = scaler.fit_transform(X_t)
+#             scaler     = StandardScaler()
+#             X_t_scaled = scaler.fit_transform(X_t)
 
-            km = KMeans(n_clusters=k, n_init=10, random_state=42)
-            km.fit(X_t_scaled)
+#             km = KMeans(n_clusters=k, n_init=10, random_state=42)
+#             km.fit(X_t_scaled)
 
-            centroids_raw = scaler.inverse_transform(km.cluster_centers_)
+#             centroids_raw = scaler.inverse_transform(km.cluster_centers_)
 
-            for cluster_label in range(k):
-                child_scenarios = [
-                    s for s, lbl in zip(member_scenarios, km.labels_)
-                    if lbl == cluster_label
-                ]
+#             for cluster_label in range(k):
+#                 child_scenarios = [
+#                     s for s, lbl in zip(member_scenarios, km.labels_)
+#                     if lbl == cluster_label
+#                 ]
 
-                cond_prob = len(child_scenarios) / n_parent
-                path_prob = parent_node['path_prob'] * cond_prob
+#                 cond_prob = len(child_scenarios) / n_parent
+#                 path_prob = parent_node['path_prob'] * cond_prob
 
-                c        = centroids_raw[cluster_label]
-                centroid = {
-                    'price'  : float(np.clip(c[0],  0, 12)),
-                    'occ1'   : float(np.clip(c[1], 20, 50)),
-                    'occ2'   : float(np.clip(c[2], 10, 30)),
-                }
-                centroid['hum_occ'] = centroid['occ1'] + centroid['occ2']
+#                 c        = centroids_raw[cluster_label]
+#                 centroid = {
+#                     'price'  : float(np.clip(c[0],  0, 12)),
+#                     'occ1'   : float(np.clip(c[1], 20, 50)),
+#                     'occ2'   : float(np.clip(c[2], 10, 30)),
+#                 }
+#                 centroid['hum_occ'] = centroid['occ1'] + centroid['occ2']
 
-                child_id          = node_counter
-                tree[child_id]    = {
-                    't'        : t + 1,
-                    'parent'   : parent_id,
-                    'children' : [],
-                    'scenarios': child_scenarios,
-                    'centroid' : centroid,
-                    'cond_prob': cond_prob,
-                    'path_prob': path_prob,
-                }
-                tree[parent_id]['children'].append(child_id)
-                nodes_at_next_stage.append(child_id)
-                node_counter += 1
+#                 child_id          = node_counter
+#                 tree[child_id]    = {
+#                     't'        : t + 1,
+#                     'parent'   : parent_id,
+#                     'children' : [],
+#                     'scenarios': child_scenarios,
+#                     'centroid' : centroid,
+#                     'cond_prob': cond_prob,
+#                     'path_prob': path_prob,
+#                 }
+#                 tree[parent_id]['children'].append(child_id)
+#                 nodes_at_next_stage.append(child_id)
+#                 node_counter += 1
 
-        nodes_at_current_stage = nodes_at_next_stage
+#         nodes_at_current_stage = nodes_at_next_stage
 
-    return tree
+#     return tree
 
 
-def cluster_scenarios_tree2(price_dict, occ_dict, branching_factors, horizon):
+def cluster_scenarios_tree2(price_dict, occ_dict, N_CLUSTERS, horizon):
     """
     Builds a scenario tree by recursive conditional K-Means clustering.
     Supports variable branching factors (non-symmetric trees).
@@ -321,11 +344,7 @@ def cluster_scenarios_tree2(price_dict, occ_dict, branching_factors, horizon):
         
         # --- 2. APPLY VARIABLE BRANCHING ---
         # Get the specific number of branches for this stage t
-        if isinstance(branching_factors, (list, tuple)):
-            # If the horizon is longer than the provided list, default to 1 branch (deterministic tail)
-            current_n_branches = branching_factors[t] if t < len(branching_factors) else 1
-        else:
-            current_n_branches = branching_factors # Fallback if passed an integer
+        current_n_branches = N_CLUSTERS[t] if t < len(N_CLUSTERS) else N_CLUSTERS[-1]
 
         for parent_id in nodes_at_current_stage:
 
@@ -365,9 +384,9 @@ def cluster_scenarios_tree2(price_dict, occ_dict, branching_factors, horizon):
 
                 c = centroids_raw[cluster_label]
                 centroid = {
-                    'price' : float(np.clip(c[0],  0, 12)),
-                    'occ1'  : float(np.clip(c[1], 20, 50)),
-                    'occ2'  : float(np.clip(c[2], 10, 30)),
+                    'price' : float(c[0]),
+                    'occ1'  : float(c[1]),
+                    'occ2'  : float(c[2]),
                 }
                 centroid['hum_occ'] = centroid['occ1'] + centroid['occ2']
 
@@ -471,7 +490,6 @@ def build_multisp_model(current_state, tree, horizon):
     price_by_node  = {nid: tree[nid]['centroid']['price']   for nid in internal_nodes}
     occ1_by_node   = {nid: tree[nid]['centroid']['occ1']    for nid in internal_nodes}
     occ2_by_node   = {nid: tree[nid]['centroid']['occ2']    for nid in internal_nodes}
-    humocc_by_node = {nid: tree[nid]['centroid']['hum_occ'] for nid in internal_nodes}
     path_prob_leaf = {nid: tree[nid]['path_prob']           for nid in leaf_nodes}
 
     m = ConcreteModel()
@@ -519,7 +537,6 @@ def build_multisp_model(current_state, tree, horizon):
                      initialize={t: d['outdoor_temperature'][t] for t in range(horizon)})
     
     m.prices = Param(m.N_int, initialize=price_by_node)
-    m.HumOcc = Param(m.N_int, initialize=humocc_by_node)
     m.O1     = Param(m.N_int, initialize=occ1_by_node)
     m.O2     = Param(m.N_int, initialize=occ2_by_node)
     m.pi     = Param(m.N_leaf, initialize=path_prob_leaf)
@@ -608,12 +625,12 @@ def build_multisp_model(current_state, tree, horizon):
             return m.Hum[nid] == (
                 m.Hum[0]
                 - m.Hvent * m.Vent[nid]
-                + m.Hocc  * m.HumOcc[nid]
+                + m.Hocc * occ(r,pid)
             )
         return m.Hum[nid] == (
             m.Hum[pid]
             - m.Hvent * m.Vent[pid]
-            + m.Hocc  * m.HumOcc[pid]
+            + m.Hocc * (m.O1[nid] + m.O2[nid])
         )
     m.HumDyn = Constraint(m.N, rule=hum_dynamics)
 
@@ -806,8 +823,7 @@ def build_multisp_model(current_state, tree, horizon):
     #         for leaf in leaf_nodes
     #     )
     # m.obj = Objective(rule=objective, sense=minimize)
-    return m
-
+    # return m
 
 # =============================================================================
 # 7. MULTI-STAGE SP POLICY FUNCTION
@@ -834,13 +850,8 @@ def multi_SP_policy(state):
     remaining = DATA['num_timeslots'] - t
     horizon   = min(HORIZON_MULTI, remaining)
 
-    # if horizon <= 0:
-    #     return {'HeatPowerRoom1': 0.0, 'HeatPowerRoom2': 0.0, 'VentilationON': 0}
-
     # Reproducible per-timestep RNG
     rng    = np.random.default_rng(seed=42 + t)
-    p_prev = state.get('price_previous') or 4.0
-
     # Ventilation status derived from counter
     vc       = state.get('vent_counter', 0)
     v_status = 1 if vc > 0 else 0
@@ -849,7 +860,7 @@ def multi_SP_policy(state):
 
     price_dict, occ_dict, _ = generate_tree_scenarios(
         price_now   = state['price_t'],
-        price_prev  = p_prev,
+        price_prev  = state['price_previous'],
         occ_r1_now  = state['Occ1'],
         occ_r2_now  = state['Occ2'],
         branching_factors= BRANCHING_FACTORS,
@@ -859,7 +870,7 @@ def multi_SP_policy(state):
     # ── Build scenario tree ───────────────────────────────────────────────────
     tree = cluster_scenarios_tree2(
         price_dict, occ_dict,
-        branching_factors = BRANCHING_FACTORS,
+        N_CLUSTERS = N_CLUSTERS,
         horizon             = horizon,
     )
 

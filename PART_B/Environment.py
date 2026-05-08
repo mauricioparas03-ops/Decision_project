@@ -2,10 +2,9 @@ from EnvFunctions import apply_dynamics, check_feasibility
 from policies.dummy_policy import select_action as dummy_action
 #Import your policy here:
 #from policies.dummy_policy import select_action
-#from policies.multiSP_policy import select_action
-#from policies.lookahead_policy import select_action
-#from policies.SP_policy import select_action
-from policies.multiSP_policy import select_action
+# from policies.lookahead_policy import select_action
+from policies.SP_policy import select_action
+# from policies.multiSP_policy import select_action
 
 from Data.v2_SystemCharacteristics import get_fixed_data
 import pandas as pd
@@ -61,6 +60,7 @@ for day in range(E_days):
     cost_of_this_day = 0.0
 
     for t in range(T_hours):
+        print(f"Day {day}, Time {t}: Current state: {state}", flush=True)
         # DECISION (Here-and-now)
         decision = select_action(state)
 
@@ -72,8 +72,12 @@ for day in range(E_days):
             decision = dummy_action(state)
 
         # COST AND DYNAMICS
-        #cost afteroverrules
-        state, real_cost = apply_dynamics(state, decision, data)
+        # cost after overrules; pass the day's exogenous arrays so the
+        # environment values from the CSV are used for the "real" next state
+        state, real_cost = apply_dynamics(state, decision, data,
+                          day_occ1=day_occ1,
+                          day_occ2=day_occ2,
+                          day_prices=day_prices)
         cost_of_this_day += real_cost
     
     # 6. TRANSITION (exogenous - Uncertainty "Real" revealed by the historical CSV data)
@@ -83,7 +87,7 @@ for day in range(E_days):
             state['price_previous'] = state['price_t']
             state['price_t'] = day_prices[t + 1]
             # current_time already updated in apply_dynamics, so it will automatically move to the next hour in the next iteration
-            
+        print(f"Day {day}, Time {t}: Decision taken: {decision}", flush=True)
     # Save the total cost of this day
     daily_costs[day] = cost_of_this_day
 
