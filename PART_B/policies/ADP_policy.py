@@ -1,5 +1,6 @@
 from pyomo.environ import *
 from Data.v2_SystemCharacteristics import get_fixed_data
+from Data.PriceProcessRestaurant import price_model
 
 # definitive wheights for the VFA, obtained after training on 50 days with a linear regression on the collected data
 VFA_WEIGHTS = {
@@ -100,6 +101,8 @@ def select_action(state):
             m.c_vfa_t2_b = Constraint(expr=m.T2_vfa <= data['temp_max_comfort_threshold'])
         else:
             m.c_vfa_t2 = Constraint(expr=m.T2_vfa == m.T2_next)
+
+        expected_price_next = price_model(state['price_t'], state['price_previous'])
         
         expected_future_cost = (
             w['intercept'] +   
@@ -108,7 +111,8 @@ def select_action(state):
             w['H'] * m.H_next +
             w['vent_counter'] * m.vent_counter_next + 
             w['low_override_r1'] * m.low_override_r1_next + 
-            w['low_override_r2'] * m.low_override_r2_next
+            w['low_override_r2'] * m.low_override_r2_next +
+            w['price_t'] * expected_price_next
         )
     else:
         # end of the day: future cost is zero (Natural End-of-Horizon)
@@ -120,59 +124,59 @@ def select_action(state):
     solver = SolverFactory('gurobi')
     solver.solve(m, tee=False)
 
-    # =====================================================================
-    # INIZIO BLOCCO DI DEBUG VFA (Aggiornato con Trust Region)
-    # =====================================================================
-    try:
-        # 1. Estrazione stati fisici (realtà termodinamica)
-        val_T1_next = value(m.T1_next)
-        val_T2_next = value(m.T2_next)
-        val_H_next  = value(m.H_next)
-        val_vent    = value(m.vent_counter_next)
-        val_ov1     = value(m.low_override_r1_next)
-        val_ov2     = value(m.low_override_r2_next)
+    # # =====================================================================
+    # # INIZIO BLOCCO DI DEBUG VFA (Aggiornato con Trust Region)
+    # # =====================================================================
+    # try:
+    #     # 1. Estrazione stati fisici (realtà termodinamica)
+    #     val_T1_next = value(m.T1_next)
+    #     val_T2_next = value(m.T2_next)
+    #     val_H_next  = value(m.H_next)
+    #     val_vent    = value(m.vent_counter_next)
+    #     val_ov1     = value(m.low_override_r1_next)
+    #     val_ov2     = value(m.low_override_r2_next)
         
-        val_costo_immediato = value(immediate_cost)
+    #     val_costo_immediato = value(immediate_cost)
         
-        if t < 9:
-            val_costo_futuro = value(expected_future_cost)
-            # 2. Estrazione stati VFA (visione matematica limitata dalla Trust Region)
-            val_T1_vfa = value(m.T1_vfa)
-            val_T2_vfa = value(m.T2_vfa)
-        else:
-            val_costo_futuro = 0.0
+    #     if t < 9:
+    #         val_costo_futuro = value(expected_future_cost)
+    #         # 2. Estrazione stati VFA (visione matematica limitata dalla Trust Region)
+    #         val_T1_vfa = value(m.T1_vfa)
+    #         val_T2_vfa = value(m.T2_vfa)
+    #     else:
+    #         val_costo_futuro = 0.0
             
-        val_costo_totale = val_costo_immediato + val_costo_futuro
+    #     val_costo_totale = val_costo_immediato + val_costo_futuro
 
-        print(f"\n{'='*65}")
-        print(f"🔎 DEBUG TIMESTEP t = {t}")
-        print(f"{'='*65}")
-        print(f"Costo Immediato (Oggi) : {val_costo_immediato:>8.2f}")
-        print(f"Costo Futuro (VFA)     : {val_costo_futuro:>8.2f}")
-        print(f"Obiettivo Totale Solver: {val_costo_totale:>8.2f}")
-        print("-" * 65)
+    #     print(f"\n{'='*65}")
+    #     print(f"🔎 DEBUG TIMESTEP t = {t}")
+    #     print(f"{'='*65}")
+    #     print(f"Costo Immediato (Oggi) : {val_costo_immediato:>8.2f}")
+    #     print(f"Costo Futuro (VFA)     : {val_costo_futuro:>8.2f}")
+    #     print(f"Obiettivo Totale Solver: {val_costo_totale:>8.2f}")
+    #     print("-" * 65)
         
-        if t < 9:
-            w = VFA_WEIGHTS[t+1]
+    #     if t < 9:
+    #         w = VFA_WEIGHTS[t+1]
             
-            # Pesi corretti (Manteniamo la tua logica di visualizzazione)
-            w_v_count = max(0, w['vent_counter'])
-            w_ov1 = max(0, w['low_override_r1'])
-            w_ov2 = max(0, w['low_override_r2'])
+    #         # Pesi corretti (Manteniamo la tua logica di visualizzazione)
+    #         w_v_count = max(0, w['vent_counter'])
+    #         w_ov1 = max(0, w['low_override_r1'])
+    #         w_ov2 = max(0, w['low_override_r2'])
 
-            print("Dettaglio fisica vs Trust Region VFA scelti dal solver:")
-            print(f"  T1: fisico {val_T1_next:>5.2f} -> VFA vista: {val_T1_vfa:>5.2f} | Peso: {w['T1']:>7.4f} ")
-            print(f"  T2: fisico {val_T2_next:>5.2f} -> VFA vista: {val_T2_vfa:>5.2f} | Peso: {w['T2']:>7.4f} ")
-            print(f"  H:  fisico {val_H_next:>5.2f}  -> Peso: {w['H']:>7.4f} ")
-            print(f"  vent_c:  {val_vent:>5.2f} | Peso adj: {w_v_count:>7.4f} | Impatto: {w_v_count * val_vent:>8.2f}")
-            print(f"  over_r1: {val_ov1:>5.2f} | Peso adj: {w_ov1:>7.4f} | Impatto: {w_ov1 * val_ov1:>8.2f}")
-            print(f"  over_r2: {val_ov2:>5.2f} | Peso adj: {w_ov2:>7.4f} | Impatto: {w_ov2 * val_ov2:>8.2f}")
-        print(f"{'='*65}\n")
+    #         print("Dettaglio fisica vs Trust Region VFA scelti dal solver:")
+    #         print(f"  T1: fisico {val_T1_next:>5.2f} -> VFA vista: {val_T1_vfa:>5.2f} | Peso: {w['T1']:>7.4f} ")
+    #         print(f"  T2: fisico {val_T2_next:>5.2f} -> VFA vista: {val_T2_vfa:>5.2f} | Peso: {w['T2']:>7.4f} ")
+    #         print(f"  H:  fisico {val_H_next:>5.2f}  -> Peso: {w['H']:>7.4f} ")
+    #         print(f"  vent_c:  {val_vent:>5.2f} | Peso adj: {w_v_count:>7.4f} | Impatto: {w_v_count * val_vent:>8.2f}")
+    #         print(f"  over_r1: {val_ov1:>5.2f} | Peso adj: {w_ov1:>7.4f} | Impatto: {w_ov1 * val_ov1:>8.2f}")
+    #         print(f"  over_r2: {val_ov2:>5.2f} | Peso adj: {w_ov2:>7.4f} | Impatto: {w_ov2 * val_ov2:>8.2f}")
+    #     print(f"{'='*65}\n")
         
-    except Exception as e:
-        print(f"Errore nel blocco di debug VFA: {e}")
-    # =====================================================================
-    # FINE BLOCCO DI DEBUG VFA
+    # except Exception as e:
+    #     print(f"Errore nel blocco di debug VFA: {e}")
+    # # =====================================================================
+    # # FINE BLOCCO DI DEBUG VFA
 
     return {
         "HeatPowerRoom1": value(m.p1),

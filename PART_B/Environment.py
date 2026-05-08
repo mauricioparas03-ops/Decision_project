@@ -79,10 +79,14 @@ for day in range(E_days):
             state['price_previous'] = state['price_t']
             state['price_t'] = day_prices[t + 1]
             # current_time already updated in apply_dynamics, so it will automatically move to the next hour in the next iteration
-            
+    
+        if state["T1"] < 18 or state["T2"] < 18:
+            print(f"ora: {t}, day: {day}, {state['T1']:.2f}, {state['T2']:.2f}, {state['H']:.2f}, {state['vent_counter']}, {state['low_override_r1']}, {state['low_override_r2']}")   
+        #print(decision)
+
     # Save the total cost of this day
     daily_costs[day] = cost_of_this_day
 
-    print(decision)
+    
 
 print(f"Cost average over {E_days} days: {np.mean(daily_costs):.2f}")
