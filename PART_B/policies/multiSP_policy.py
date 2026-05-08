@@ -35,7 +35,7 @@ from Data.v2_SystemCharacteristics import get_fixed_data
 # ── Hyper-parameters ───────────────────────────────────────────────────────────
 HORIZON_MULTI = 4    # lookahead steps (must be >= 3 due to vent-inertia)
 GEN_SCENARIOS = 500  # raw Monte Carlo paths before tree clustering
-N_CLUSTERS    = [1, 3,3,3]    
+N_CLUSTERS    = [1,3,3,3]  
 BRANCHING_FACTORS = [10, 10, 10, 10] 
 
 # =============================================================================
@@ -345,7 +345,6 @@ def cluster_scenarios_tree2(price_dict, occ_dict, N_CLUSTERS, horizon):
         # --- 2. APPLY VARIABLE BRANCHING ---
         # Get the specific number of branches for this stage t
         current_n_branches = N_CLUSTERS[t] if t < len(N_CLUSTERS) else N_CLUSTERS[-1]
-
         for parent_id in nodes_at_current_stage:
 
             parent_node      = tree[parent_id]
@@ -615,6 +614,7 @@ def build_multisp_model(current_state, tree, horizon):
     m.TempDyn = Constraint(m.R * m.N, rule=temp_dynamics)
 
     # ── Humidity dynamics ─────────────────────────────────────────────────────
+    
     def hum_dynamics(m, nid):
         if nid == 0:
             return m.Hum[nid] == H_init
@@ -625,13 +625,14 @@ def build_multisp_model(current_state, tree, horizon):
             return m.Hum[nid] == (
                 m.Hum[0]
                 - m.Hvent * m.Vent[nid]
-                + m.Hocc * occ(r,pid)
+                + m.Hocc * (m.O1[nid] + m.O2[nid])   # nid è in N_int, pid=0 non lo è
             )
         return m.Hum[nid] == (
             m.Hum[pid]
             - m.Hvent * m.Vent[pid]
-            + m.Hocc * (m.O1[nid] + m.O2[nid])
-        )
+            + m.Hocc * (m.O1[pid] + m.O2[pid])        # pid è in N_int, coerente con temp_dynamics
+    )
+
     m.HumDyn = Constraint(m.N, rule=hum_dynamics)
 
         # ── 1. High temperature: forced heating shutdown ──────────────────────────
@@ -917,7 +918,7 @@ def multi_SP_policy(state):
     # We take the first child of root as the representative decision.
     stage1_nodes  = tree[0]['children']
     internal_set  = set(internal_nodes)
-    decision_node = next(nid for nid in stage1_nodes if nid in internal_set)
+    decision_node = stage1_nodes[0]
 
     p1 = float(value(model.Heat[1, decision_node]))
     p2 = float(value(model.Heat[2, decision_node]))
