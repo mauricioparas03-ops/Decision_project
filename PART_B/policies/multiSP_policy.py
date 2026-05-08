@@ -35,7 +35,7 @@ from Data.v2_SystemCharacteristics import get_fixed_data
 # ── Hyper-parameters ───────────────────────────────────────────────────────────
 HORIZON_MULTI = 4    # lookahead steps (must be >= 3 due to vent-inertia)
 GEN_SCENARIOS = 500  # raw Monte Carlo paths before tree clustering
-N_CLUSTERS    = [1,3,3,3]  
+N_CLUSTERS    = 3 
 BRANCHING_FACTORS = [10, 10, 10, 10] 
 
 # =============================================================================
@@ -344,7 +344,7 @@ def cluster_scenarios_tree2(price_dict, occ_dict, N_CLUSTERS, horizon):
         
         # --- 2. APPLY VARIABLE BRANCHING ---
         # Get the specific number of branches for this stage t
-        current_n_branches = N_CLUSTERS[t] if t < len(N_CLUSTERS) else N_CLUSTERS[-1]
+        current_n_branches = N_CLUSTERS
         for parent_id in nodes_at_current_stage:
 
             parent_node      = tree[parent_id]
@@ -414,17 +414,14 @@ def cluster_scenarios_tree2(price_dict, occ_dict, N_CLUSTERS, horizon):
 
 def _path_to_root(tree, leaf_id):
     """
-    Return list of internal node ids from leaf back to (but not including) root.
-    Covers all decision nodes on this path, including stage-1 nodes.
+    Return list of decision node ids from leaf back to (and including) stage-1 nodes.
+    Excludes root (node 0). Used to sum costs along a path in the scenario tree.
     """
     path = []
-    nid  = tree[leaf_id]['parent']
-    while nid is not None and tree[nid]['parent'] is not None:
+    nid  = leaf_id
+    while nid is not None and nid != 0:
         path.append(nid)
         nid = tree[nid]['parent']
-    # Include stage-1 node (its parent is root which has parent=None)
-    if nid is not None and tree[nid]['parent'] is None and nid != 0:
-        path.append(nid)
     return path
 
 
@@ -479,16 +476,29 @@ def build_multisp_model(current_state, tree, horizon):
     }
 
     # ── Node sets ─────────────────────────────────────────────────────────────
-    all_nodes      = list(tree.keys())
-    internal_nodes = [nid for nid, n in tree.items() if n['children'] and nid != 0]
-    leaf_nodes     = [nid for nid, n in tree.items() if not n['children'] and nid != 0]
-    internal_set   = set(internal_nodes)
-    leaf_set       = set(leaf_nodes)
+    all_nodes       = list(tree.keys())
+    decision_nodes  = [0] + [nid for nid in tree.keys() if nid != 0]  # ALL nodes (root + all non-root) - true here-and-now decisions from root
+    internal_nodes  = [nid for nid, n in tree.items() if n['children'] and nid != 0]  # Nodes with children
+    leaf_nodes      = [nid for nid, n in tree.items() if not n['children'] and nid != 0]  # Leaf nodes
+    decision_set    = set(decision_nodes)
+    internal_set    = set(internal_nodes)
+    leaf_set        = set(leaf_nodes)
 
-    # ── Exogenous data dicts (keyed by internal node id) ──────────────────────
-    price_by_node  = {nid: tree[nid]['centroid']['price']   for nid in internal_nodes}
-    occ1_by_node   = {nid: tree[nid]['centroid']['occ1']    for nid in internal_nodes}
-    occ2_by_node   = {nid: tree[nid]['centroid']['occ2']    for nid in internal_nodes}
+    # ── Exogenous data dicts (keyed by decision node id) ──────────────────────
+    # For root (node 0): use current state as centroid (here-and-now decision point)
+    root_centroid = {
+        'price': current_state['price_t'],
+        'occ1': current_state['Occ1'],
+        'occ2': current_state['Occ2'],
+    }
+    price_by_node  = {0: root_centroid['price']}
+    occ1_by_node   = {0: root_centroid['occ1']}
+    occ2_by_node   = {0: root_centroid['occ2']}
+    # Add non-root nodes
+    for nid in [n for n in tree.keys() if n != 0]:
+        price_by_node[nid] = tree[nid]['centroid']['price']
+        occ1_by_node[nid] = tree[nid]['centroid']['occ1']
+        occ2_by_node[nid] = tree[nid]['centroid']['occ2']
     path_prob_leaf = {nid: tree[nid]['path_prob']           for nid in leaf_nodes}
 
     m = ConcreteModel()
@@ -496,8 +506,10 @@ def build_multisp_model(current_state, tree, horizon):
     # ── Sets ──────────────────────────────────────────────────────────────────
     m.R      = Set(initialize=[1, 2])
     m.N      = Set(initialize=all_nodes)
-    m.N_int  = Set(initialize=internal_nodes)
+    m.N_dec  = Set(initialize=decision_nodes)   # All nodes including root (here-and-now decisions)
+    m.N_int  = Set(initialize=internal_nodes)   # Nodes with children
     m.N_leaf = Set(initialize=leaf_nodes)
+    m.RN_dec = m.R * m.N_dec
     m.RN_int = m.R * m.N_int
 
     # ── Physical parameters ───────────────────────────────────────────────────
@@ -535,28 +547,20 @@ def build_multisp_model(current_state, tree, horizon):
     m.Tout   = Param(range(horizon),
                      initialize={t: d['outdoor_temperature'][t] for t in range(horizon)})
     
-    m.prices = Param(m.N_int, initialize=price_by_node)
-    m.O1     = Param(m.N_int, initialize=occ1_by_node)
-    m.O2     = Param(m.N_int, initialize=occ2_by_node)
+    m.prices = Param(m.N_dec, initialize=price_by_node)
+    m.O1     = Param(m.N_dec, initialize=occ1_by_node)
+    m.O2     = Param(m.N_dec, initialize=occ2_by_node)
     m.pi     = Param(m.N_leaf, initialize=path_prob_leaf)
 
-    # ── Decision variables (internal nodes only) ──────────────────────────────
-    # m.Heat = Var(m.RN_int, domain=NonNegativeReals, bounds=(0, d['heating_max_power']))
-    # m.Vent = Var(m.N_int,  domain=Binary)
-    # m.Uon  = Var(m.N_int,  domain=Binary)
-    # m.Uoff = Var(m.N_int,  domain=Binary)
-
-    # m.u = Var(m.RN_int, domain=Binary)   # 1 → low-temp overrule active
-    # m.w = Var(m.RN_int, domain=Binary)   # 1 → temperature recovered to T_OK
-    # m.y = Var(m.RN_int, domain=Binary)   # 1 → high-temp overrule active
-    m.Heat   = Var(m.RN_int, domain=NonNegativeReals, bounds=(0, d['heating_max_power']))
-    m.Vent   = Var(m.N_int,  domain=Binary)
-    m.Vstart = Var(m.N_int,  domain=Binary)
-     # Overrule indicator variables
-    m.y_low  = Var(m.RN_int, domain=Binary)  
-    m.y_ok   = Var(m.RN_int, domain=Binary)  
-    m.y_high = Var(m.RN_int, domain=Binary)   
-    m.u      = Var(m.RN_int, domain=Binary) 
+    # ── Decision variables (decision nodes: all non-root nodes) ──────────────────
+    m.Heat   = Var(m.RN_dec, domain=NonNegativeReals, bounds=(0, d['heating_max_power']))
+    m.Vent   = Var(m.N_dec,  domain=Binary)
+    m.Vstart = Var(m.N_dec,  domain=Binary)
+    # Overrule indicator variables
+    m.y_low  = Var(m.RN_dec, domain=Binary)  
+    m.y_ok   = Var(m.RN_dec, domain=Binary)  
+    m.y_high = Var(m.RN_dec, domain=Binary)   
+    m.u      = Var(m.RN_dec, domain=Binary) 
     # ── State variables (all nodes) ───────────────────────────────────────────
     m.T_in = Var(m.R * m.N, domain=NonNegativeReals)
     m.Hum  = Var(m.N,        domain=NonNegativeReals)
@@ -637,37 +641,37 @@ def build_multisp_model(current_state, tree, horizon):
 
         # ── 1. High temperature: forced heating shutdown ──────────────────────────
     #   y_high = 1  ⟺  T_in > Thigh
-    m.CThigh1 = Constraint(m.RN_int,
+    m.CThigh1 = Constraint(m.RN_dec,
         rule=lambda m, r, nid:
             m.T_in[r, nid] >= m.Thigh - m.M_temp * (1 - m.y_high[r, nid]))
-    m.CThigh2 = Constraint(m.RN_int,
+    m.CThigh2 = Constraint(m.RN_dec,
         rule=lambda m, r, nid:
             m.T_in[r, nid] <= m.Thigh + m.M_temp * m.y_high[r, nid])
-    m.CHeatOff = Constraint(m.RN_int,
+    m.CHeatOff = Constraint(m.RN_dec,
         rule=lambda m, r, nid:
              m.Heat[r, nid] <= m.Pr * (1 - m.y_high[r, nid]))
     
     # ── 2. Low temperature: overrule activation ───────────────────────────────
     #   y_low = 1  ⟺  T_in < Tmin
-    m.CTlow1 = Constraint(m.RN_int,
+    m.CTlow1 = Constraint(m.RN_dec,
         rule=lambda m, r, nid:
             m.T_in[r, nid] <= m.Tmin + m.M_temp * (1 - m.y_low[r, nid]))
-    m.CTlow2 = Constraint(m.RN_int,
+    m.CTlow2 = Constraint(m.RN_dec,
         rule=lambda m, r, nid:
             m.T_in[r, nid] >= m.Tmin - m.M_temp * m.y_low[r, nid])
  
     # ── 3. Temperature-OK: overrule deactivation ──────────────────────────────
     #   y_ok = 1  ⟺  T_in >= Tok
-    m.CTok1 = Constraint(m.RN_int,
+    m.CTok1 = Constraint(m.RN_dec,
         rule=lambda m, r, nid:
             m.T_in[r, nid] >= m.Tok - m.M_temp * (1 - m.y_ok[r, nid]))
-    m.CTok2 = Constraint(m.RN_int,
+    m.CTok2 = Constraint(m.RN_dec,
         rule=lambda m, r, nid:
             m.T_in[r, nid] <= m.Tok + m.M_temp * m.y_ok[r, nid])
  
     # ── 4. Overrule memory (u) propagated through tree parent pointers ────────
     #   CU1 : u >= y_low
-    m.CU1 = Constraint(m.RN_int,
+    m.CU1 = Constraint(m.RN_dec,
         rule=lambda m, r, nid: m.u[r, nid] >= m.y_low[r, nid])
  
     #   CU2 : u <= u_prev + y_low
@@ -675,27 +679,27 @@ def build_multisp_model(current_state, tree, horizon):
         pid    = tree[nid]['parent']
         u_prev = low_override[r] if (pid is None or pid == 0) else m.u[r, pid]
         return m.u[r, nid] <= u_prev + m.y_low[r, nid]
-    m.CU2 = Constraint(m.RN_int, rule=c_u2)
+    m.CU2 = Constraint(m.RN_dec, rule=c_u2)
  
     #   CU3 : u >= u_prev - y_ok   (persist until temperature recovers)
     def c_u3(m, r, nid):
         pid    = tree[nid]['parent']
         u_prev = low_override[r] if (pid is None or pid == 0) else m.u[r, pid]
         return m.u[r, nid] >= u_prev - m.y_ok[r, nid]
-    m.CU3 = Constraint(m.RN_int, rule=c_u3)
+    m.CU3 = Constraint(m.RN_dec, rule=c_u3)
  
     #   CU4 : u <= 1 - y_ok        (deactivate as soon as T >= Tok)
-    m.CU4 = Constraint(m.RN_int,
+    m.CU4 = Constraint(m.RN_dec,
         rule=lambda m, r, nid: m.u[r, nid] <= 1 - m.y_ok[r, nid])
  
     #   Full heating power required during overrule
-    m.CHeatMax = Constraint(m.RN_int,
+    m.CHeatMax = Constraint(m.RN_dec,
         rule=lambda m, r, nid: m.Heat[r, nid] >= m.Pr * m.u[r, nid])
  
     # ─────────────────────────────────────────────────────────────────────────
     # HUMIDITY OVERRULE
     # ─────────────────────────────────────────────────────────────────────────
-    m.CVentHum = Constraint(m.N_int,
+    m.CVentHum = Constraint(m.N_dec,
         rule=lambda m, nid: m.Hum[nid] <= m.Hhigh + m.M_hum * m.Vent[nid])
  
     # ─────────────────────────────────────────────────────────────────────────
@@ -707,10 +711,10 @@ def build_multisp_model(current_state, tree, horizon):
         pid = tree[nid]['parent']
         v_p = v_prev if (pid is None or pid == 0) else m.Vent[pid]
         return m.Vstart[nid] >= m.Vent[nid] - v_p
-    m.CVstart1 = Constraint(m.N_int, rule=c_vstart1)
+    m.CVstart1 = Constraint(m.N_dec, rule=c_vstart1)
  
     # CVstart2 : Vstart[nid] <= Vent[nid]
-    m.CVstart2 = Constraint(m.N_int,
+    m.CVstart2 = Constraint(m.N_dec,
         rule=lambda m, nid: m.Vstart[nid] <= m.Vent[nid])
  
     # CVstart3 : Vstart[nid] <= 1 - Vent[parent]
@@ -718,16 +722,16 @@ def build_multisp_model(current_state, tree, horizon):
         pid = tree[nid]['parent']
         v_p = v_prev if (pid is None or pid == 0) else m.Vent[pid]
         return m.Vstart[nid] <= 1 - v_p
-    m.CVstart3 = Constraint(m.N_int, rule=c_vstart3)
+    m.CVstart3 = Constraint(m.N_dec, rule=c_vstart3)
  
     # MinVentOn : Σ_{k in descendant chain} Vent[k] >= |chain| * Vstart[nid]
     def min_uptime(m, nid):
         chain = [k for k in _descendants_chain(tree, nid, m.U_vent)
-                 if k in internal_set]
+                 if k in decision_set]
         if not chain:
             return Constraint.Skip
         return sum(m.Vent[k] for k in chain) >= len(chain) * m.Vstart[nid]
-    m.MinVentOn = Constraint(m.N_int, rule=min_uptime)
+    m.MinVentOn = Constraint(m.N_dec, rule=min_uptime)
  
     # ─────────────────────────────────────────────────────────────────────────
     # OBJECTIVE: E[cost along each leaf path]
@@ -912,13 +916,10 @@ def multi_SP_policy(state):
         )
         return {'HeatPowerRoom1': 0.0, 'HeatPowerRoom2': 0.0, 'VentilationON': 0}
 
-    # ── Extract first-stage decision ──────────────────────────────────────────
-    # First-stage nodes are children of root. In multi-stage SP, NAC is
-    # structural — each node has its own variable, so branches may differ.
-    # We take the first child of root as the representative decision.
-    stage1_nodes  = tree[0]['children']
-    internal_set  = set(internal_nodes)
-    decision_node = stage1_nodes[0]
+    # ── Extract here-and-now decision from root ──────────────────────────────
+    # True non-anticipativity: decision taken at root (before any scenario unfolds)
+    # All scenarios must follow this same decision at node 0
+    decision_node = 0  # Root node
 
     p1 = float(value(model.Heat[1, decision_node]))
     p2 = float(value(model.Heat[2, decision_node]))
