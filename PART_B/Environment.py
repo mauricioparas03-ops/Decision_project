@@ -80,8 +80,8 @@ for day in range(E_days):
             state['price_t'] = day_prices[t + 1]
             # current_time already updated in apply_dynamics, so it will automatically move to the next hour in the next iteration
     
-        if state["T1"] < 18 or state["T2"] < 18:
-            print(f"ora: {t}, day: {day}, {state['T1']:.2f}, {state['T2']:.2f}, {state['H']:.2f}, {state['vent_counter']}, {state['low_override_r1']}, {state['low_override_r2']}")   
+        #if state["T1"] < 18 or state["T2"] < 18:
+        print(f" day: {day}, ora: {t}, T1: {state['T1']:.2f}, T2: {state['T2']:.2f}, humidity: {state['H']:.2f}, vent counter: {state['vent_counter']}, override_r1: {state['low_override_r1']}, override_r2: {state['low_override_r2']}, power 1: {decision['HeatPowerRoom1']:.2f}, power 2: {decision['HeatPowerRoom2']:.2f}, vent: {decision['VentilationON']}, cost: {real_cost:.2f}")   
         #print(decision)
 
     # Save the total cost of this day
