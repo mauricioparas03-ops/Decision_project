@@ -145,7 +145,7 @@ def centralized_optimal_solution(n_stores, store_weights, occupancies, data):
     def mall_power_limit_rule(model, t):
         return sum(model.p[s, r, t] for s in model.S for r in model.R) <= data['P_mall']
 
-    model.Mall_Power_Limit = Constraint(model.T, rule=mall_power_limit_rule)
+    model.Mall_Power_Limit = Constraint(model.Tp, rule=mall_power_limit_rule)
 
     solver = SolverFactory('gurobi')
     solver.solve(model, tee=False)
