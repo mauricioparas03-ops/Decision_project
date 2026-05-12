@@ -136,7 +136,7 @@ def centralized_optimal_solution(iterations, n_stores, store_weights, occupancie
         else:
             t_prev = t - 1
             r_other = 2 if r == 1 else 1
-            occ = model.Occ[s, r, t_prev] if r == 1 else model.Occ[s, r_other, t_prev]
+            occ = model.Occ[s, r, t_prev]
             return model.T_in[s, r, t] == (
                         model.T_in[s, r, t_prev]
                         + model.Zexch * (model.T_in[s, r_other, t_prev] - model.T_in[s, r, t_prev])
@@ -243,12 +243,12 @@ data = fetch_data()
 occupancies = pd.read_csv(Path(__file__).parent / 'Data' / 'Task7Occupancies.csv', header=None, skiprows = 1).iloc[:, :-1]
 days = 100
 N_stores = 15
-store_weights = [float(n + 1) for n in range(N_stores)]
+store_weights = [float(n + 1) for n in range(1, N_stores + 1)]
 
 # TODO: Step 2 - Compute centralized optimal solution
 print("[2/5] Computing centralized optimal solution...")
 centralized_solution = centralized_optimal_solution(
-    iterations=days,
+    iterations=1,
     n_stores=N_stores,
     store_weights=store_weights,
     occupancies=occupancies,
@@ -256,7 +256,7 @@ centralized_solution = centralized_optimal_solution(
 )
 
 # Run distributed algorithm for the five step sizes requested in the task
-step_sizes = [0.001, 0.01, 0.1, 1, 10]
+step_sizes = [0.001, 0.01, 0.1, 1, 1.0]
 results_by_alpha = {}
 for alpha in step_sizes:
     print(f"  Running distributed algorithm for α = {alpha}")
