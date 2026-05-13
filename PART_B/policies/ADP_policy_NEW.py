@@ -5,16 +5,16 @@ from Data.OccupancyProcessRestaurant import next_occupancy_levels
 
 
 VFA_WEIGHTS = {
-    0: {'T1': 0.0, 'T2': -0.0, 'H': 0.0, 'price_t': 35.9197, 'price_previous': -19.1043, 'Occ1': -0.3504, 'Occ2': -0.4823, 'vent_counter': 0.0, 'low_override_r1': 0.0, 'low_override_r2': 0.0, 'intercept': 41.5499},
-    1: {'T1': -8.4267, 'T2': -5.1972, 'H': -0.705, 'price_t': 35.5329, 'price_previous': -20.4844, 'Occ1': 0.5823, 'Occ2': 0.8666, 'vent_counter': -25.9457, 'low_override_r1': 0.0, 'low_override_r2': 0.0, 'intercept': 302.7767},
-    2: {'T1': -5.8296, 'T2': -8.2715, 'H': -0.1894, 'price_t': 38.0654, 'price_previous': -23.0358, 'Occ1': 0.3091, 'Occ2': 0.8031, 'vent_counter': -22.1988, 'low_override_r1': 21.3882, 'low_override_r2': 50.3856, 'intercept': 293.3101},
-    3: {'T1': -6.8466, 'T2': -4.4059, 'H': 0.5919, 'price_t': 38.8714, 'price_previous': -22.6028, 'Occ1': 0.2916, 'Occ2': 0.9008, 'vent_counter': -8.1946, 'low_override_r1': 15.3258, 'low_override_r2': 29.3167, 'intercept': 175.2718},
-    4: {'T1': -5.237, 'T2': -4.1989, 'H': 1.0355, 'price_t': 32.7017, 'price_previous': -15.9855, 'Occ1': 0.0574, 'Occ2': 0.187, 'vent_counter': 0.9435, 'low_override_r1': 11.2276, 'low_override_r2': 25.7309, 'intercept': 115.3034},
-    5: {'T1': -4.6849, 'T2': -6.3935, 'H': 0.7406, 'price_t': 25.8907, 'price_previous': -11.3308, 'Occ1': -0.1703, 'Occ2': 0.0171, 'vent_counter': 1.3153, 'low_override_r1': 11.0832, 'low_override_r2': 19.718, 'intercept': 169.5322},
-    6: {'T1': -6.81, 'T2': -3.9558, 'H': 0.4173, 'price_t': 20.385, 'price_previous': -8.9296, 'Occ1': 0.0207, 'Occ2': 0.0188, 'vent_counter': 1.3412, 'low_override_r1': 13.1749, 'low_override_r2': 20.5421, 'intercept': 176.8147},
-    7: {'T1': -2.8955, 'T2': -5.3523, 'H': 0.2851, 'price_t': 15.9023, 'price_previous': -7.0113, 'Occ1': -0.1154, 'Occ2': 0.6538, 'vent_counter': 0.2889, 'low_override_r1': 11.3646, 'low_override_r2': 23.0011, 'intercept': 123.7202},
-    8: {'T1': -3.157, 'T2': -1.1498, 'H': 0.2721, 'price_t': 7.0695, 'price_previous': -0.2905, 'Occ1': -0.0921, 'Occ2': 0.0406, 'vent_counter': 1.6258, 'low_override_r1': 16.4888, 'low_override_r2': 16.9401, 'intercept': 60.5083},
-    9: {'T1': -0.2234, 'T2': -0.3708, 'H': 0.1329, 'price_t': 2.5882, 'price_previous': 0.4347, 'Occ1': 0.0162, 'Occ2': 0.0831, 'vent_counter': 1.5048, 'low_override_r1': 11.965, 'low_override_r2': 12.1878, 'intercept': -6.7958},
+    0: {'T1': 0.0, 'T2': -0.0, 'H': 0.0, 'price_t': 26.825, 'price_previous': -17.4572, 'Occ1': 1.1663, 'Occ2': 1.2161, 'vent_counter': 0.0, 'low_override_r1': 0.0, 'low_override_r2': 0.0, 'intercept': 61.0359},
+    1: {'T1': -0.8019, 'T2': -1.0771, 'H': 9.258, 'price_t': 29.4533, 'price_previous': -18.4912, 'Occ1': -1.1551, 'Occ2': -0.7443, 'vent_counter': 141.6396, 'low_override_r1': 0.0, 'low_override_r2': 0.0, 'intercept': -271.8814},
+    2: {'T1': -1.2397, 'T2': -1.682, 'H': 1.1047, 'price_t': 33.4371, 'price_previous': -21.8444, 'Occ1': -0.6305, 'Occ2': 0.3539, 'vent_counter': -6.4357, 'low_override_r1': 75.7665, 'low_override_r2': 61.5993, 'intercept': 93.57},
+    3: {'T1': -4.7691, 'T2': 0.8629, 'H': -0.4243, 'price_t': 34.2862, 'price_previous': -20.8241, 'Occ1': 0.7083, 'Occ2': 1.4613, 'vent_counter': -25.8287, 'low_override_r1': 39.3282, 'low_override_r2': 29.3616, 'intercept': 126.8804},
+    4: {'T1': 2.2995, 'T2': -3.0611, 'H': 1.2506, 'price_t': 31.1741, 'price_previous': -15.9515, 'Occ1': 0.1228, 'Occ2': 1.0082, 'vent_counter': 3.1702, 'low_override_r1': 36.344, 'low_override_r2': 30.1224, 'intercept': -56.1332},
+    5: {'T1': 2.8862, 'T2': -3.5986, 'H': 1.0798, 'price_t': 22.0975, 'price_previous': -8.9023, 'Occ1': 0.0378, 'Occ2': 0.2463, 'vent_counter': 2.5999, 'low_override_r1': 27.4047, 'low_override_r2': 24.5568, 'intercept': -36.5503},
+    6: {'T1': -1.3993, 'T2': 1.1512, 'H': 0.5505, 'price_t': 16.2527, 'price_previous': -5.6775, 'Occ1': 0.5306, 'Occ2': 0.3416, 'vent_counter': 3.7591, 'low_override_r1': 23.633, 'low_override_r2': 23.0267, 'intercept': -48.5741},
+    7: {'T1': -0.5691, 'T2': -0.8967, 'H': 0.3382, 'price_t': 12.511, 'price_previous': -4.297, 'Occ1': 0.8723, 'Occ2': -0.0633, 'vent_counter': 1.0209, 'low_override_r1': 15.3075, 'low_override_r2': 22.3047, 'intercept': -15.122},
+    8: {'T1': -1.0249, 'T2': -0.4937, 'H': 0.3589, 'price_t': 8.1363, 'price_previous': -1.7101, 'Occ1': 0.5735, 'Occ2': 0.2538, 'vent_counter': 1.2943, 'low_override_r1': 9.6584, 'low_override_r2': 18.9561, 'intercept': -19.9921},
+    9: {'T1': -0.1823, 'T2': 0.4903, 'H': 0.1723, 'price_t': 3.9434, 'price_previous': 0.1421, 'Occ1': -0.1386, 'Occ2': -0.026, 'vent_counter': 1.6066, 'low_override_r1': 9.8868, 'low_override_r2': 10.3678, 'intercept': -20.732},
 }
 
 def select_action(state):
