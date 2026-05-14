@@ -1,6 +1,6 @@
 import numpy as np
 from pyomo.environ import *
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import Ridge  # MODIFICA: Importata Ridge al posto di LinearRegression
 import matplotlib
 matplotlib.use('Agg')
 
@@ -12,10 +12,11 @@ from Data.v2_SystemCharacteristics import get_fixed_data
 # HYPERPARAMETERS & SETTINGS
 N_SAMPLES = 80            # Number of initial scenarios {x_{n,0}}
 K_SCENARIOS = 5           # Future samples for expectation E[]
-ITERATIONS_I = 8          # OUTER LOOP (Policy Improvement)
+ITERATIONS_I = 15         # MODIFICA: Aumentate le iterazioni a 15 per compensare il Soft Update
 SWEEPS_J = 4              # INNER LOOP (Policy Evaluation)
 T_HOURS = 10
 EPSILON = 0.15            # Exploration
+BETA = 0.2                # MODIFICA: Tasso di apprendimento per il Soft Update
 
 data = get_fixed_data()
 feature_cols = ["T1", "T2", "H", "price_t", "price_previous", "Occ1", "Occ2", "vent_counter", "low_override_r1", "low_override_r2"]
@@ -25,10 +26,27 @@ vfa_weights = {t: {feat: 0.0 for feat in feature_cols} for t in range(T_HOURS)}
 for t in range(T_HOURS): vfa_weights[t]['intercept'] = 0.0
 
 # ============================================================================
+# 0. FUNZIONE DI NORMALIZZAZIONE (NUOVA)
+# ============================================================================
+def get_normalized_features(state):
+    """Normalizza gli stati per stabilizzare la regressione lineare"""
+    return {
+        'T1': (state['T1'] - 22.0) / 8.0,
+        'T2': (state['T2'] - 22.0) / 8.0,
+        'H': (state['H'] - 40.0) / 40.0,
+        'Occ1': (state['Occ1'] - 20.0) / 30.0,
+        'Occ2': (state['Occ2'] - 10.0) / 20.0,
+        'price_t': state['price_t'] / 10.0,
+        'price_previous': state['price_previous'] / 10.0,
+        'vent_counter': state['vent_counter'] / 3.0,
+        'low_override_r1': state['low_override_r1'],
+        'low_override_r2': state['low_override_r2']
+    }
+
+# ============================================================================
 # 1. MILP FUNCTION (Used ONLY in Forward Pass to find Optimal Policy)
 # ============================================================================
 def solve_bellman_equation_milp(state, next_t_weights):
-
     
     m = ConcreteModel()
     m.p1 = Var(bounds=(0, data['heating_max_power']))
@@ -51,7 +69,8 @@ def solve_bellman_equation_milp(state, next_t_weights):
     m.T1_next = Var(m.Scen); m.T2_next = Var(m.Scen); m.H_next = Var(m.Scen)
     m.ov1_next = Var(m.Scen, domain=Binary); m.ov2_next = Var(m.Scen, domain=Binary)
     m.vc_next = Var(domain=NonNegativeReals)
-    m.T1_vfa = Var(m.Scen); m.T2_vfa = Var(m.Scen)
+    
+    # MODIFICA: rimosse variabili T1_vfa e T2_vfa
 
     m.c_vc = Constraint(expr=m.vc_next == (state['vent_counter'] + 1) * m.v)
     immediate_cost = state['price_t'] * (m.p1 + m.p2 + m.v * data['ventilation_power'])
@@ -88,23 +107,18 @@ def solve_bellman_equation_milp(state, next_t_weights):
         m.add_component(f"c_u_r2_d_{k}", Constraint(expr=m.ov2_next[k] <= 1 - getattr(m, f"y_ok_r2_{k}")))
 
         if next_t_weights:
-            if next_t_weights['T1'] < 0:
-                m.add_component(f"tr1a_{k}", Constraint(expr=m.T1_vfa[k] <= m.T1_next[k]))
-                m.add_component(f"tr1b_{k}", Constraint(expr=m.T1_vfa[k] <= data['temp_max_comfort_threshold']))
-            else: m.add_component(f"tr1_{k}", Constraint(expr=m.T1_vfa[k] == m.T1_next[k]))
-                
-            if next_t_weights['T2'] < 0:
-                m.add_component(f"tr2a_{k}", Constraint(expr=m.T2_vfa[k] <= m.T2_next[k]))
-                m.add_component(f"tr2b_{k}", Constraint(expr=m.T2_vfa[k] <= data['temp_max_comfort_threshold']))
-            else: m.add_component(f"tr2_{k}", Constraint(expr=m.T2_vfa[k] == m.T2_next[k]))
-
+            # MODIFICA: rimossa la Trust Region e applicata la normalizzazione direttamente alle variabili
             val_future_state = (next_t_weights['intercept'] + 
-                                next_t_weights['T1'] * m.T1_vfa[k] + next_t_weights['T2'] * m.T2_vfa[k] + 
-                                next_t_weights['H'] * m.H_next[k] + 
-                                next_t_weights['price_t'] * s['price_t'] + next_t_weights['price_previous'] * state['price_t'] + 
-                                next_t_weights['Occ1'] * s['Occ1'] + next_t_weights['Occ2'] * s['Occ2'] + 
-                                next_t_weights['vent_counter'] * m.vc_next + 
-                                next_t_weights['low_override_r1'] * m.ov1_next[k] + next_t_weights['low_override_r2'] * m.ov2_next[k])
+                                next_t_weights['T1'] * ((m.T1_next[k] - 22.0) / 8.0) + 
+                                next_t_weights['T2'] * ((m.T2_next[k] - 22.0) / 8.0) + 
+                                next_t_weights['H'] * ((m.H_next[k] - 40.0) / 40.0) + 
+                                next_t_weights['price_t'] * (s['price_t'] / 10.0) + 
+                                next_t_weights['price_previous'] * (state['price_t'] / 10.0) + 
+                                next_t_weights['Occ1'] * (s['Occ1'] / 30.0) + 
+                                next_t_weights['Occ2'] * (s['Occ2'] / 20.0) + 
+                                next_t_weights['vent_counter'] * (m.vc_next / 3.0) + 
+                                next_t_weights['low_override_r1'] * m.ov1_next[k] + 
+                                next_t_weights['low_override_r2'] * m.ov2_next[k])
             expected_future_cost += (1.0 / K_SCENARIOS) * val_future_state
 
     m.obj = Objective(expr=immediate_cost + expected_future_cost, sense=minimize)
@@ -142,17 +156,30 @@ def evaluate_fixed_action(state, action, next_weights):
         elif T2_n >= data['temp_OK_threshold']: ov2_n = 0
         else: ov2_n = state['low_override_r2']
 
-        # Trust Region application (if weights say it's good to exceed comfort)
-        T1_vfa = T1_n if next_weights['T1'] >= 0 else min(T1_n, data['temp_max_comfort_threshold'])
-        T2_vfa = T2_n if next_weights['T2'] >= 0 else min(T2_n, data['temp_max_comfort_threshold'])
+        # MODIFICA: Creazione dello stato futuro simulato per la normalizzazione
+        next_state_sim = {
+            'T1': T1_n, 'T2': T2_n, 'H': H_n,
+            'Occ1': sc_o1, 'Occ2': sc_o2,
+            'price_t': sc_p, 'price_previous': state['price_t'],
+            'vent_counter': vc_n,
+            'low_override_r1': ov1_n, 'low_override_r2': ov2_n
+        }
+        
+        # MODIFICA: Applicazione della normalizzazione
+        norm_feats = get_normalized_features(next_state_sim)
 
-        # Linear approximation
+        # Linear approximation (usando le feature normalizzate)
         vfa_k = (next_weights['intercept'] + 
-                 next_weights['T1']*T1_vfa + next_weights['T2']*T2_vfa + next_weights['H']*H_n + 
-                 next_weights['price_t']*sc_p + next_weights['price_previous']*state['price_t'] + 
-                 next_weights['Occ1']*sc_o1 + next_weights['Occ2']*sc_o2 + 
-                 next_weights['vent_counter']*vc_n + 
-                 next_weights['low_override_r1']*ov1_n + next_weights['low_override_r2']*ov2_n)
+                 next_weights['T1']*norm_feats['T1'] + 
+                 next_weights['T2']*norm_feats['T2'] + 
+                 next_weights['H']*norm_feats['H'] + 
+                 next_weights['price_t']*norm_feats['price_t'] + 
+                 next_weights['price_previous']*norm_feats['price_previous'] + 
+                 next_weights['Occ1']*norm_feats['Occ1'] + 
+                 next_weights['Occ2']*norm_feats['Occ2'] + 
+                 next_weights['vent_counter']*norm_feats['vent_counter'] + 
+                 next_weights['low_override_r1']*norm_feats['low_override_r1'] + 
+                 next_weights['low_override_r2']*norm_feats['low_override_r2'])
         
         expected_vfa += (1.0 / K_SCENARIOS) * vfa_k
 
@@ -223,20 +250,26 @@ for i in range(ITERATIONS_I):
                 # Evaluate the FIXED action using pure math, updating with respect to eta_hat_j
                 target_value = evaluate_fixed_action(state_n, action_n, next_t_weights_j)
                 Y_targets.append(target_value)
-                X_features.append([state_n[feat] for feat in feature_cols])
+                
+                # MODIFICA: Normalizzazione prima della regressione
+                norm_feats = get_normalized_features(state_n)
+                X_features.append([norm_feats[feat] for feat in feature_cols])
             
             if len(X_features) > 0:
-                regressor = LinearRegression(fit_intercept=True)
+                # MODIFICA: Utilizzo della Ridge Regression per evitare l'overfitting sui campioni
+                regressor = Ridge(alpha=1.0, fit_intercept=True)
                 regressor.fit(X_features, Y_targets)
                 for idx, feat_name in enumerate(feature_cols):
                     inner_weights[t][feat_name] = regressor.coef_[idx]
                 inner_weights[t]['intercept'] = regressor.intercept_
 
     # ----------------------------------------------------
-    # POLICY IMPROVEMENT (eta^{i+1} = eta_hat^J)
+    # POLICY IMPROVEMENT (Soft Update)
     # ----------------------------------------------------
-    # Transfer consolidated weights as new policy for next iteration
-    vfa_weights = {t: {k: v for k,v in inner_weights[t].items()} for t in range(T_HOURS)}
+    # MODIFICA: Implementato il Soft Update per evitare instabilità
+    for t in range(T_HOURS):
+        for k in feature_cols + ['intercept']:
+            vfa_weights[t][k] = (1 - BETA) * vfa_weights[t][k] + BETA * inner_weights[t][k]
 
 # FINAL OUTPUT
 print("\n=== FINAL RESULT: VFA_WEIGHTS ===")
