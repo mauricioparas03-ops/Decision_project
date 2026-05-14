@@ -418,11 +418,12 @@ def _path_to_root(tree, leaf_id):
     Excludes root (node 0). Used to sum costs along a path in the scenario tree.
     """
     path = []
-    nid  = leaf_id
-    while nid is not None and nid != 0:
+    nid = leaf_id
+    while nid is not None:  
         path.append(nid)
         nid = tree[nid]['parent']
     return path
+
 
 
 def _descendants_chain(tree, nid, L):
@@ -578,22 +579,14 @@ def build_multisp_model(current_state, tree, horizon):
         other_r = 2 if r == 1 else 1
 
         if pid == 0:
-            # State flows from root; decisions made AT nid (root has no vars)
-            t_root = tree[0]['t']   # = 0
-            if nid in leaf_set:
-                # Horizon=1 edge case: leaf whose parent is root, no decision
-                return m.T_in[r, nid] == (
-                    m.T_in[r, 0]
-                    + m.Zexch * (m.T_in[other_r, 0] - m.T_in[r, 0])
-                    + m.Zloss * (m.Tout[t_root]      - m.T_in[r, 0])
-                )
+            t_root = tree[0]['t']
             return m.T_in[r, nid] == (
                 m.T_in[r, 0]
                 + m.Zexch * (m.T_in[other_r, 0] - m.T_in[r, 0])
                 + m.Zloss * (m.Tout[t_root]      - m.T_in[r, 0])
-                + m.Zconv * m.Heat[r, nid]
-                - m.Zcool * m.Vent[nid]
-                + m.Zocc  * occ(r, nid)
+                + m.Zconv * m.Heat[r, 0]  
+                - m.Zcool * m.Vent[0]       
+                + m.Zocc  * occ(r, nid)     
             )
 
         # General case: pid is a non-root internal node
@@ -628,8 +621,8 @@ def build_multisp_model(current_state, tree, horizon):
                 return m.Hum[nid] == m.Hum[0]
             return m.Hum[nid] == (
                 m.Hum[0]
-                - m.Hvent * m.Vent[nid]
-                + m.Hocc * (m.O1[nid] + m.O2[nid])   # nid è in N_int, pid=0 non lo è
+                - m.Hvent * m.Vent[0]          
+                + m.Hocc * (m.O1[nid] + m.O2[nid])
             )
         return m.Hum[nid] == (
             m.Hum[pid]
