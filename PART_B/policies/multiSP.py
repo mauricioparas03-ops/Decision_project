@@ -52,7 +52,7 @@ def build_scenario_tree(state, L, S, K):
             # --- Cluster samples into K clusters ---
             scaler = StandardScaler()
             samples_scaled = scaler.fit_transform(samples)
-            kmeans = KMeans(n_clusters=K, random_state=0).fit(samples_scaled)
+            kmeans = KMeans(n_clusters=K, random_state=0, n_init = 10).fit(samples_scaled)
             centers = scaler.inverse_transform(kmeans.cluster_centers_)
 
             # --- Create new nodes for each cluster center ---
