@@ -13,8 +13,8 @@ from Data.OccupancyProcessRestaurant import next_occupancy_levels
 
 # ── Hyper-parameters ───────────────────────────────────────────────────────────
 HORIZON_MULTI = 6    
-N_CLUSTERS    = 4 
-BRANCHING_FACTOR = 10
+N_CLUSTERS    = 3 
+BRANCHING_FACTOR = 6
 
 # ── System Parameters ─────────────────────────────────
 DATA = get_fixed_data()
@@ -286,6 +286,13 @@ def build_multisp_model(state, tree, horizon):
     m.c_u1 = Constraint(m.RN, rule=lambda m,r,n: m.u[r,n] >= m.y_low[r,n])
     m.c_u2 = Constraint(m.RN, rule=u_memory_rule)
     m.c_u3 = Constraint(m.RN, rule=lambda m,r,n: m.Heat[r,n] >= m.Pr * m.u[r,n])
+    def u_memory_rule(m, r, n):
+        if n == root_id:
+            return m.u[r, n] == low_override[r] 
+        
+        p_id = nodes_map[n]['parent_id']
+        return m.u[r, n] >= m.u[r, p_id] - m.y_ok[r, n]
+
     m.c_u4 = Constraint(m.RN, rule=lambda m,r,n: m.u[r,n] <= 1 - m.y_ok[r,n])
 
     # ── 4. Ventilation Constraints ───────────────────────────────────────────
