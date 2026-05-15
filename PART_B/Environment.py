@@ -62,10 +62,8 @@ for day in range(E_days):
     for t in range(T_hours):
         print(f"Day {day}, Time {t}: Current state: {state}", flush=True)
         # DECISION (Here-and-now)
-        decision = select_action(state)
-
         # VERIFY FEASIBILITY
-        check_and_sanitize_action(select_action, state, power_max)
+        decision = check_and_sanitize_action(select_action, state, power_max)
         is_feasible = check_feasibility(decision, power_max)
         if not is_feasible:
             print(f"Day {day}, Time {t}: Infeasible! Using dummy.")

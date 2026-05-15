@@ -12,9 +12,9 @@ from Data.PriceProcessRestaurant import price_model
 from Data.OccupancyProcessRestaurant import next_occupancy_levels
 
 # ── Hyper-parameters ───────────────────────────────────────────────────────────
-HORIZON_MULTI = 4    
-N_CLUSTERS    = 3 
-BRANCHING_FACTOR = 5
+HORIZON_MULTI = 6    
+N_CLUSTERS    = 4 
+BRANCHING_FACTOR = 10
 
 # ── System Parameters ─────────────────────────────────
 DATA = get_fixed_data()
