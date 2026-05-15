@@ -4,7 +4,7 @@ from policies.dummy_policy import select_action as dummy_action
 #from policies.dummy_policy import select_action
 # from policies.lookahead_policy import select_action
 #from policies.SP_policy import select_action
-from policies.multiSP_policy import select_action
+from policies.multiSP import select_action
 
 from Data.v2_SystemCharacteristics import get_fixed_data
 import pandas as pd
@@ -87,7 +87,7 @@ for day in range(E_days):
             state['price_previous'] = state['price_t']
             state['price_t'] = day_prices[t + 1]
             # current_time already updated in apply_dynamics, so it will automatically move to the next hour in the next iteration
-        print(f"Day {day}, Time {t}: Decision taken: {decision}", flush=True)
+        print(f"Day {day}, Time {t}: Decision taken: {decision}, override: {state['low_override_r1']}, {state['low_override_r2']}", flush=True)
     # Save the total cost of this day
     daily_costs[day] = cost_of_this_day
 
