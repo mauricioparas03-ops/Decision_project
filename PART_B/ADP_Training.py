@@ -182,8 +182,8 @@ def solve_bellman_equation_milp(state, next_t_weights):
                 # Solo le variabili esogene cambiano per scenario k
                 next_t_weights['price_t'] * (scen_data[k]['price_t'] / 10.0) + 
                 next_t_weights['price_previous'] * (state['price_t'] / 10.0) + 
-                next_t_weights['Occ1'] * (scen_data[k]['Occ1'] / 30.0) + 
-                next_t_weights['Occ2'] * (scen_data[k]['Occ2'] / 20.0) + 
+                next_t_weights['Occ1'] * ((scen_data[k]['Occ1'] - 20.0) / 30.0) + 
+                next_t_weights['Occ2'] * ((scen_data[k]['Occ2'] - 10.0) / 20.0) +
                 next_t_weights['vent_counter'] * (m.vc_next / 3.0) + 
                 next_t_weights['low_override_r1'] * m.ov1_next + 
                 next_t_weights['low_override_r2'] * m.ov2_next
