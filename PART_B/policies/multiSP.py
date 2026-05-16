@@ -208,6 +208,11 @@ def build_multisp_model(state, tree, horizon):
     for stage_idx, stage_nodes in enumerate(tree):
         for node in stage_nodes:
             node_stage[node['id']] = stage_idx
+    remaining_uptime = DATA['vent_min_up_time'] - vent_counter
+    if vent_counter > 0 and remaining_uptime > 0:
+        for stage_idx in range(min(remaining_uptime, horizon)):
+            for node in tree[stage_idx]:
+                m.Vent[node['id']].fix(1)
     
     # Root Node Initial Conditions
     def root_temp_init_rule(m, r):
