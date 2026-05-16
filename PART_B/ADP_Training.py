@@ -82,6 +82,12 @@ def solve_bellman_equation_milp(state, next_t_weights):
     elif state['T2'] < data['temp_min_comfort_threshold'] or state['low_override_r2'] == 1: m.p2.fix(data['heating_max_power'])
     if state['H'] > data['humidity_threshold'] or state['vent_counter'] in [1, 2]: m.v.fix(1)
 
+    if state['T1'] > data['temp_max_comfort_threshold']: m.p1.fix(0)
+    elif state['T1'] < data['temp_min_comfort_threshold'] or state['low_override_r1'] == 1: m.p1.fix(data['heating_max_power'])
+    if state['T2'] > data['temp_max_comfort_threshold']: m.p2.fix(0)
+    elif state['T2'] < data['temp_min_comfort_threshold'] or state['low_override_r2'] == 1: m.p2.fix(data['heating_max_power'])
+    if state['H'] > data['humidity_threshold'] or state['vent_counter'] in [1, 2]: m.v.fix(1)
+
     scen_data = []
     for _ in range(K_SCENARIOS):
         sc_p = price_model(state['price_t'], state['price_previous'])
