@@ -70,6 +70,20 @@ def get_normalized_features(state):
 def solve_bellman_equation_milp(state, next_t_weights):
     
     m = ConcreteModel()
+    # Overrule stato corrente (vincola l'azione here-and-now)
+    if state['low_override_r1'] == 1 and state['T1'] < data['temp_OK_threshold']:
+        m.p1.fix(data['heating_max_power'])
+    if state['T1'] > data['temp_max_comfort_threshold']:
+        m.p1.fix(0)
+
+    if state['low_override_r2'] == 1 and state['T2'] < data['temp_OK_threshold']:
+        m.p2.fix(data['heating_max_power'])
+    if state['T2'] > data['temp_max_comfort_threshold']:
+        m.p2.fix(0)
+
+    if state['H'] > data['humidity_threshold'] or \
+    (state['vent_counter'] > 0 and state['vent_counter'] < data['vent_min_up_time']):
+        m.v.fix(1)
     m.p1 = Var(bounds=(0, data['heating_max_power']))
     m.p2 = Var(bounds=(0, data['heating_max_power']))
     m.v = Var(domain=Binary)
