@@ -4,16 +4,16 @@ from Data.PriceProcessRestaurant import price_model
 from Data.OccupancyProcessRestaurant import next_occupancy_levels 
 
 VFA_WEIGHTS = {
-    0: {'T1': 0.0, 'T2': 0.0, 'H': 0.0, 'price_t': 187.6667, 'price_previous': -62.3012, 'Occ1': 1.0089, 'Occ2': 3.1033, 'vent_counter': 0.0, 'low_override_r1': 0.0, 'low_override_r2': 0.0, 'intercept': 89.887},
-    1: {'T1': -9.6641, 'T2': -7.4988, 'H': 6.7825, 'price_t': 151.4188, 'price_previous': 47.0275, 'Occ1': 1.7654, 'Occ2': 4.4254, 'vent_counter': -5.4744, 'low_override_r1': 0.0, 'low_override_r2': 0.0, 'intercept': 44.2343},
-    2: {'T1': -20.3638, 'T2': -18.6061, 'H': 14.9716, 'price_t': 106.136, 'price_previous': 64.4833, 'Occ1': 2.9498, 'Occ2': 3.9021, 'vent_counter': -12.2186, 'low_override_r1': 15.8448, 'low_override_r2': 14.7889, 'intercept': 34.7689},
-    3: {'T1': -15.6701, 'T2': -15.2939, 'H': 18.9105, 'price_t': 85.1026, 'price_previous': 59.0587, 'Occ1': 6.0099, 'Occ2': 4.0709, 'vent_counter': -12.2869, 'low_override_r1': 19.4058, 'low_override_r2': 15.9349, 'intercept': 31.4082},
-    4: {'T1': -14.1999, 'T2': -12.498, 'H': 28.6464, 'price_t': 75.633, 'price_previous': 51.2581, 'Occ1': 2.5462, 'Occ2': -1.8861, 'vent_counter': 0.01, 'low_override_r1': 16.1628, 'low_override_r2': 12.7883, 'intercept': 21.0121},
-    5: {'T1': -15.1683, 'T2': -15.928, 'H': 26.523, 'price_t': 61.2616, 'price_previous': 42.5076, 'Occ1': -1.8042, 'Occ2': -0.4127, 'vent_counter': 2.1161, 'low_override_r1': 12.3775, 'low_override_r2': 11.2232, 'intercept': 9.2689},
-    6: {'T1': -20.201, 'T2': -14.626, 'H': 18.6769, 'price_t': 50.237, 'price_previous': 30.8139, 'Occ1': -4.5278, 'Occ2': -4.4701, 'vent_counter': 2.5054, 'low_override_r1': 11.4128, 'low_override_r2': 10.2971, 'intercept': 6.3677},
-    7: {'T1': -16.8653, 'T2': -14.8129, 'H': 6.5894, 'price_t': 38.6177, 'price_previous': 23.5582, 'Occ1': 1.9337, 'Occ2': 1.865, 'vent_counter': 0.74, 'low_override_r1': 13.7811, 'low_override_r2': 11.6375, 'intercept': -3.3874},
-    8: {'T1': -10.1996, 'T2': -11.7665, 'H': 9.009, 'price_t': 29.3922, 'price_previous': 20.8786, 'Occ1': 1.8752, 'Occ2': 0.7728, 'vent_counter': -1.0947, 'low_override_r1': 13.73, 'low_override_r2': 14.4303, 'intercept': -9.3937},
-    9: {'T1': -1.7892, 'T2': -1.9195, 'H': 5.0565, 'price_t': 16.2, 'price_previous': 10.4758, 'Occ1': 1.6312, 'Occ2': 0.3141, 'vent_counter': 2.1061, 'low_override_r1': 11.2347, 'low_override_r2': 11.3342, 'intercept': -8.4416},
+    0: {'T1': -18.7167, 'T2': -15.3049, 'H': 36.3739, 'price_t': 174.3789, 'price_previous': -53.1764, 'Occ1': -4.6999, 'Occ2': 0.1533, 'vent_counter': 0.0, 'low_override_r1': 0.0, 'low_override_r2': 0.0, 'intercept': 74.3299},
+    1: {'T1': -18.1261, 'T2': -21.7064, 'H': 39.7965, 'price_t': 145.3838, 'price_previous': 13.8824, 'Occ1': -0.0434, 'Occ2': 1.5164, 'vent_counter': 18.5453, 'low_override_r1': 3.5211, 'low_override_r2': 17.1537, 'intercept': 32.4133},
+    2: {'T1': -19.612, 'T2': -12.6947, 'H': 36.8506, 'price_t': 105.5618, 'price_previous': 48.8964, 'Occ1': 2.2471, 'Occ2': -1.1857, 'vent_counter': 31.9703, 'low_override_r1': 21.7403, 'low_override_r2': 21.3257, 'intercept': 20.4053},
+    3: {'T1': -9.9476, 'T2': -10.9026, 'H': 28.325, 'price_t': 84.8963, 'price_previous': 55.5871, 'Occ1': 2.9794, 'Occ2': -1.2659, 'vent_counter': 15.7752, 'low_override_r1': 20.5333, 'low_override_r2': 23.9453, 'intercept': 17.4612},
+    4: {'T1': -10.8574, 'T2': -11.6557, 'H': 18.8052, 'price_t': 70.5663, 'price_previous': 45.5688, 'Occ1': -0.0426, 'Occ2': -2.627, 'vent_counter': -0.8769, 'low_override_r1': 24.0487, 'low_override_r2': 20.2653, 'intercept': 22.9409},
+    5: {'T1': -8.6935, 'T2': -9.9432, 'H': 15.7539, 'price_t': 62.6761, 'price_previous': 41.5705, 'Occ1': -0.8214, 'Occ2': -1.4374, 'vent_counter': -3.7855, 'low_override_r1': 16.8457, 'low_override_r2': 23.2125, 'intercept': 15.8114},
+    6: {'T1': -8.8508, 'T2': -6.6035, 'H': 16.3716, 'price_t': 53.5042, 'price_previous': 35.3989, 'Occ1': 0.3332, 'Occ2': -1.5543, 'vent_counter': -2.8252, 'low_override_r1': 17.4996, 'low_override_r2': 16.5994, 'intercept': 6.1139},
+    7: {'T1': -8.1283, 'T2': -8.1708, 'H': 16.0716, 'price_t': 39.5477, 'price_previous': 28.9486, 'Occ1': 0.0778, 'Occ2': -2.2621, 'vent_counter': -0.5009, 'low_override_r1': 15.9565, 'low_override_r2': 15.3527, 'intercept': -3.5235},
+    8: {'T1': -6.3418, 'T2': -5.9387, 'H': 12.9215, 'price_t': 25.4014, 'price_previous': 18.8155, 'Occ1': -0.4181, 'Occ2': -2.5778, 'vent_counter': -0.2622, 'low_override_r1': 15.4762, 'low_override_r2': 15.6067, 'intercept': -6.4093},
+    9: {'T1': 0.9961, 'T2': 0.2475, 'H': 6.7062, 'price_t': 6.9417, 'price_previous': 5.0313, 'Occ1': 0.4365, 'Occ2': -0.0945, 'vent_counter': -0.3673, 'low_override_r1': 13.0701, 'low_override_r2': 13.6237, 'intercept': -3.3634},
 }
 
 def select_action(state):
@@ -77,10 +77,11 @@ def select_action(state):
     m.c_yok_r1_b = Constraint(expr=m.T1_next <= data['temp_OK_threshold'] + M*m.y_ok_r1_next)
 
     u_prev_r1 = state['low_override_r1']
-    m.c_u_r1_a = Constraint(expr=m.ov1_next >= m.y_low_r1_next)
-    m.c_u_r1_b = Constraint(expr=m.ov1_next <= u_prev_r1 + m.y_low_r1_next)
-    m.c_u_r1_c = Constraint(expr=m.ov1_next >= u_prev_r1 - m.y_ok_r1_next)
-    m.c_u_r1_d = Constraint(expr=m.ov1_next <= 1 - m.y_ok_r1_next)
+    # NOMI AGGIORNATI: Logica di Isteresi (Memoria del termostato)
+    m.c_force_override_ON_if_cold_r1     = Constraint(expr=m.ov1_next >= m.y_low_r1_next)
+    m.c_prevent_override_without_cold_r1 = Constraint(expr=m.ov1_next <= u_prev_r1 + m.y_low_r1_next)
+    m.c_keep_override_ON_until_ok_r1     = Constraint(expr=m.ov1_next >= u_prev_r1 - m.y_ok_r1_next)
+    m.c_force_override_OFF_if_ok_r1      = Constraint(expr=m.ov1_next <= 1 - m.y_ok_r1_next)
 
     # --- Room 2 ---
     m.y_low_r2_next = Var(domain=Binary)
@@ -94,11 +95,11 @@ def select_action(state):
     m.c_yok_r2_b = Constraint(expr=m.T2_next <= data['temp_OK_threshold'] + M*m.y_ok_r2_next)
 
     u_prev_r2 = state['low_override_r2']
-    m.c_u_r2_a = Constraint(expr=m.ov2_next >= m.y_low_r2_next)
-    m.c_u_r2_b = Constraint(expr=m.ov2_next <= u_prev_r2 + m.y_low_r2_next)
-    m.c_u_r2_c = Constraint(expr=m.ov2_next >= u_prev_r2 - m.y_ok_r2_next)
-    m.c_u_r2_d = Constraint(expr=m.ov2_next <= 1 - m.y_ok_r2_next)
-
+    # NOMI AGGIORNATI: Logica di Isteresi (Memoria del termostato)
+    m.c_force_override_ON_if_cold_r2     = Constraint(expr=m.ov2_next >= m.y_low_r2_next)
+    m.c_prevent_override_without_cold_r2 = Constraint(expr=m.ov2_next <= u_prev_r2 + m.y_low_r2_next)
+    m.c_keep_override_ON_until_ok_r2     = Constraint(expr=m.ov2_next >= u_prev_r2 - m.y_ok_r2_next)
+    m.c_force_override_OFF_if_ok_r2      = Constraint(expr=m.ov2_next <= 1 - m.y_ok_r2_next)
     # ==========================================
     # APPROXIMATE VALUE FUNCTION 
     # ==========================================
