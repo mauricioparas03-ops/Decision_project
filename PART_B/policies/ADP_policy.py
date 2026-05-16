@@ -1,19 +1,19 @@
 from pyomo.environ import *
 from Data.v2_SystemCharacteristics import get_fixed_data
+from Data.PriceProcessRestaurant import price_model
+from Data.OccupancyProcessRestaurant import next_occupancy_levels 
 
-
-# definitive wheights for the VFA, obtained after training on 500 days with a linear regression on the collected data
 VFA_WEIGHTS = {
-    0: {'T1': -4.7728, 'T2': -4.2723, 'H': 2.0153, 'price_t': 63.9635, 'vent_counter': 2.8734, 'low_override_r1': 19.5118, 'low_override_r2': 4.5856, },
-    1: {'T1': -3.4651, 'T2': -5.2359, 'H': 1.4317, 'price_t': 40.1735, 'vent_counter': -2.4675, 'low_override_r1': 21.6570, 'low_override_r2': 3.9929, },
-    2: {'T1': -5.2616, 'T2': -5.4729, 'H': 1.5572, 'price_t': 31.5471, 'vent_counter': -1.2298, 'low_override_r1': 16.2080, 'low_override_r2': 1.6170, },
-    3: {'T1': -5.7597, 'T2': -8.1122, 'H': 1.7312, 'price_t': 26.3297, 'vent_counter': -0.6071, 'low_override_r1': 10.4642, 'low_override_r2': -2.7964, },
-    4: {'T1': -7.2416, 'T2': -7.4703, 'H': 1.6601, 'price_t': 22.7137, 'vent_counter': 3.1988, 'low_override_r1': 1.8259, 'low_override_r2': 5.1817, },
-    5: {'T1': -5.7665, 'T2': -8.8734, 'H': 1.5656, 'price_t': 19.6383, 'vent_counter': -0.1712, 'low_override_r1': 5.1719, 'low_override_r2': 5.1719, },
-    6: {'T1': -5.8720, 'T2': -4.7384, 'H': 1.3976, 'price_t': 14.4499, 'vent_counter': 1.4589, 'low_override_r1': 12.6062, 'low_override_r2': 5.0689, },
-    7: {'T1': -4.8330, 'T2': -2.7647, 'H': 0.9841, 'price_t': 12.0165, 'vent_counter': 1.6978, 'low_override_r1': 18.7546, 'low_override_r2': 7.6453, },
-    8: {'T1': -0.3268, 'T2': -3.5952, 'H': 0.4287, 'price_t': 7.9712, 'vent_counter': -0.4391, 'low_override_r1': 10.0615, 'low_override_r2': 16.4810, },
-    9: {'T1': -0.6808, 'T2': -0.1249, 'H': 0.3436, 'price_t': 4.1506, 'vent_counter': 0.6065, 'low_override_r1': 10.3152, 'low_override_r2': 10.3152, },
+    0: {'T1': -35.4687, 'T2': -36.5209, 'H': 38.8159, 'price_t': 236.06, 'price_previous': -72.7715, 'Occ1': 2.8919, 'Occ2': 0.999, 'vent_counter': 0.0, 'low_override_r1': 0.0, 'low_override_r2': 0.0, 'intercept': 97.1825},
+    1: {'T1': -32.6067, 'T2': -32.3931, 'H': 32.5672, 'price_t': 190.2126, 'price_previous': 14.2626, 'Occ1': 3.4663, 'Occ2': 6.7688, 'vent_counter': 27.2, 'low_override_r1': 16.0875, 'low_override_r2': 21.9745, 'intercept': 46.1404},
+    2: {'T1': -16.2663, 'T2': -19.0434, 'H': 23.6845, 'price_t': 128.2837, 'price_previous': 64.0347, 'Occ1': -1.0931, 'Occ2': -1.1827, 'vent_counter': 16.2031, 'low_override_r1': 15.573, 'low_override_r2': 16.2804, 'intercept': 42.3815},
+    3: {'T1': -18.8182, 'T2': -20.1951, 'H': 16.2384, 'price_t': 102.0203, 'price_previous': 63.263, 'Occ1': -0.9118, 'Occ2': -1.3604, 'vent_counter': 3.3014, 'low_override_r1': 8.6422, 'low_override_r2': 7.446, 'intercept': 40.1767},
+    4: {'T1': -22.9297, 'T2': -21.9709, 'H': 10.5439, 'price_t': 77.6107, 'price_previous': 50.9333, 'Occ1': -1.1049, 'Occ2': -0.6918, 'vent_counter': -1.8514, 'low_override_r1': 5.1366, 'low_override_r2': 6.4963, 'intercept': 38.4176},
+    5: {'T1': -24.4634, 'T2': -22.7247, 'H': 9.3645, 'price_t': 56.7578, 'price_previous': 33.4102, 'Occ1': -0.8202, 'Occ2': -1.764, 'vent_counter': -2.5723, 'low_override_r1': 6.855, 'low_override_r2': 6.8578, 'intercept': 33.2982},
+    6: {'T1': -27.7624, 'T2': -26.946, 'H': 8.299, 'price_t': 39.7313, 'price_previous': 19.0929, 'Occ1': -0.1903, 'Occ2': 3.4308, 'vent_counter': -3.8012, 'low_override_r1': 5.9577, 'low_override_r2': 6.0968, 'intercept': 26.2539},
+    7: {'T1': -28.2931, 'T2': -27.5167, 'H': 8.5443, 'price_t': 27.9958, 'price_previous': 11.6969, 'Occ1': 0.9816, 'Occ2': 4.6305, 'vent_counter': -3.2494, 'low_override_r1': 9.4378, 'low_override_r2': 6.6737, 'intercept': 15.4005},
+    8: {'T1': -19.2011, 'T2': -20.6518, 'H': 6.9868, 'price_t': 21.4821, 'price_previous': 14.278, 'Occ1': 1.1969, 'Occ2': 5.2746, 'vent_counter': -0.9063, 'low_override_r1': 11.5515, 'low_override_r2': 12.0323, 'intercept': -2.4843},
+    9: {'T1': 0.828, 'T2': -0.5646, 'H': 5.7386, 'price_t': 18.6641, 'price_previous': 10.5629, 'Occ1': 2.4606, 'Occ2': 1.1231, 'vent_counter': -0.5659, 'low_override_r1': 12.9957, 'low_override_r2': 10.8021, 'intercept': -9.4625},
 }
 
 def select_action(state):
@@ -28,31 +28,23 @@ def select_action(state):
     m.T1_next = Var()
     m.T2_next = Var()
     m.H_next = Var()
-
     m.vent_counter_next = Var(domain=NonNegativeReals)
-    m.low_override_r1_next = Var(domain=Binary)
-    m.low_override_r2_next = Var(domain=Binary)
 
-    #VFA variables to calculate reward
-    m.T1_vfa = Var()
-    m.T2_vfa = Var()
-    m.H_vfa = Var()
-
-    #OVERRULE FOR CURRENT STEP
+    # OVERRULE FOR CURRENT STEP (Ora t)
     if state['T1'] > data['temp_max_comfort_threshold']:
         m.p1.fix(0)
-    elif state['low_override_r1'] == 1:
+    elif state['T1'] < data['temp_min_comfort_threshold'] or state['low_override_r1'] == 1:
         m.p1.fix(data['heating_max_power'])
 
     if state['T2'] > data['temp_max_comfort_threshold']:
         m.p2.fix(0)
-    elif state['low_override_r2'] == 1:
+    elif state['T2'] < data['temp_min_comfort_threshold'] or state['low_override_r2'] == 1:
         m.p2.fix(data['heating_max_power'])
 
     if state['H'] > data['humidity_threshold'] or state['vent_counter'] in [1, 2]:
         m.v.fix(1)
     
-    #DYNAMICS OF NEXT STATE
+    # DYNAMICS OF NEXT STATE
     tout = data['outdoor_temperature'][int(state['current_time'])]
 
     m.c_t1 = Constraint(expr=m.T1_next == state['T1'] + data['heat_exchange_coeff'] * (state['T2'] - state['T1']) 
@@ -64,72 +56,87 @@ def select_action(state):
                         - data['heat_vent_coeff'] * m.v + data['heat_occupancy_coeff'] * state['Occ2'])
 
     m.c_h = Constraint(expr=m.H_next == state['H'] - data['humidity_vent_coeff'] * m.v 
-                       + data['humidity_occupancy_coeff'] * (state['Occ1'] + state['Occ2']))
+                        + data['humidity_occupancy_coeff'] * (state['Occ1'] + state['Occ2']))
 
     m.c_vc = Constraint(expr=m.vent_counter_next == (state['vent_counter'] + 1) * m.v)
 
-    #MAPPING FOR FUTURE OVERRULES
-    M = 100
-    eps = 0.001 # small constant to avoid numerical issues in the thresholding of the overrules (e.g., if T1 is exactly equal to temp_min_comfort_threshold, we want to be sure that we are in the low-temperature override state)
+    # ==========================================
+    # RIGOROUS OVERRIDE LOGIC FOR FUTURE 
+    # ==========================================
+    M, eps = 500, 0.001 
     
-    thresh1 = (data['temp_min_comfort_threshold'] if state['low_override_r1'] == 0 else data['temp_OK_threshold']) + eps
+    # --- Room 1 ---
+    m.y_low_r1_next = Var(domain=Binary)
+    m.y_ok_r1_next = Var(domain=Binary)
+    m.ov1_next = Var(domain=Binary)
 
-    m.c_low1_a = Constraint(expr=m.T1_next >= thresh1 - M * m.low_override_r1_next)
-    m.c_low1_b = Constraint(expr=m.T1_next <= thresh1 + M * (1 - m.low_override_r1_next))
+    m.c_ylow_r1_a = Constraint(expr=m.T1_next <= data['temp_min_comfort_threshold'] + M*(1 - m.y_low_r1_next))
+    m.c_ylow_r1_b = Constraint(expr=m.T1_next >= data['temp_min_comfort_threshold'] - M*m.y_low_r1_next)
 
-    thresh2 = (data['temp_min_comfort_threshold'] if state['low_override_r2'] == 0 else data['temp_OK_threshold']) + eps
+    m.c_yok_r1_a = Constraint(expr=m.T1_next >= data['temp_OK_threshold'] - M*(1 - m.y_ok_r1_next))
+    m.c_yok_r1_b = Constraint(expr=m.T1_next <= data['temp_OK_threshold'] + M*m.y_ok_r1_next)
 
-    m.c_low2_a = Constraint(expr=m.T2_next >= thresh2 - M * m.low_override_r2_next)
-    m.c_low2_b = Constraint(expr=m.T2_next <= thresh2 + M * (1 - m.low_override_r2_next))
+    u_prev_r1 = state['low_override_r1']
+    # NOMI AGGIORNATI: Logica di Isteresi (Memoria del termostato)
+    m.c_force_override_ON_if_cold_r1     = Constraint(expr=m.ov1_next >= m.y_low_r1_next)
+    m.c_prevent_override_without_cold_r1 = Constraint(expr=m.ov1_next <= u_prev_r1 + m.y_low_r1_next)
+    m.c_keep_override_ON_until_ok_r1     = Constraint(expr=m.ov1_next >= u_prev_r1 - m.y_ok_r1_next)
+    m.c_force_override_OFF_if_ok_r1      = Constraint(expr=m.ov1_next <= 1 - m.y_ok_r1_next)
 
-    T_TARGET = data['temp_max_comfort_threshold']
-    # Relaxed humidity target to avoid forcing unnecessary ventilation when we are already below the risk threshold
-    H_TARGET = data['humidity_threshold'] - 2.0
+    # --- Room 2 ---
+    m.y_low_r2_next = Var(domain=Binary)
+    m.y_ok_r2_next = Var(domain=Binary)
+    m.ov2_next = Var(domain=Binary)
 
-    # If w < 0, the solver pushes to maximize T_vfa. We lock it at the target, turning off the incentive beyond that threshold.
-    m.c_vfa_t1_a = Constraint(expr=m.T1_vfa <= m.T1_next)
-    m.c_vfa_t1_b = Constraint(expr=m.T1_vfa <= T_TARGET)
+    m.c_ylow_r2_a = Constraint(expr=m.T2_next <= data['temp_min_comfort_threshold'] + M*(1 - m.y_low_r2_next))
+    m.c_ylow_r2_b = Constraint(expr=m.T2_next >= data['temp_min_comfort_threshold'] - M*m.y_low_r2_next)
+    
+    m.c_yok_r2_a = Constraint(expr=m.T2_next >= data['temp_OK_threshold'] - M*(1 - m.y_ok_r2_next))
+    m.c_yok_r2_b = Constraint(expr=m.T2_next <= data['temp_OK_threshold'] + M*m.y_ok_r2_next)
 
-    m.c_vfa_t2_a = Constraint(expr=m.T2_vfa <= m.T2_next)
-    m.c_vfa_t2_b = Constraint(expr=m.T2_vfa <= T_TARGET)
-
-# If w > 0, the solver pushes to minimize H_vfa. We lock it to the target (it doesn't go below it), turning off the incentive.
-    m.c_vfa_h_a = Constraint(expr=m.H_vfa >= m.H_next)
-    m.c_vfa_h_b = Constraint(expr=m.H_vfa >= H_TARGET)
-
-    #APPROXIMATE VALUE FUNCTION 
+    u_prev_r2 = state['low_override_r2']
+    # NOMI AGGIORNATI: Logica di Isteresi (Memoria del termostato)
+    m.c_force_override_ON_if_cold_r2     = Constraint(expr=m.ov2_next >= m.y_low_r2_next)
+    m.c_prevent_override_without_cold_r2 = Constraint(expr=m.ov2_next <= u_prev_r2 + m.y_low_r2_next)
+    m.c_keep_override_ON_until_ok_r2     = Constraint(expr=m.ov2_next >= u_prev_r2 - m.y_ok_r2_next)
+    m.c_force_override_OFF_if_ok_r2      = Constraint(expr=m.ov2_next <= 1 - m.y_ok_r2_next)
+    # ==========================================
+    # APPROXIMATE VALUE FUNCTION 
+    # ==========================================
     immediate_cost = state['price_t'] * (m.p1 + m.p2 + m.v * data['ventilation_power'])
     
-
     t = int(state['current_time'])
-    #If not at the last hour use weiths to forecast future
+
     if t < 9:
         w = VFA_WEIGHTS[t+1]
         
-        # Cleanup of negative weights on penalty variables
-        # If the regression has assigned a negative weight to trigger an alarm, we reset it.
-        w_v_count = max(0, w['vent_counter'])
-        w_ov1 = max(0, w['low_override_r1'])
-        w_ov2 = max(0, w['low_override_r2'])
+        # Forecasts for exogenous variables at step t+1
+        expected_price_next = price_model(state['price_t'], state['price_previous'])
+        expected_occ1_next, expected_occ2_next = next_occupancy_levels(state['Occ1'], state['Occ2'])
         
+        # APPLICHIAMO LA NORMALIZZAZIONE DIRETTAMENTE ALLE VARIABILI DEL MILP
         expected_future_cost = (
-            w['T1'] * m.T1_vfa + 
-            w['T2'] * m.T2_vfa + 
-            w['H'] * m.H_vfa + 
-            w_v_count * m.vent_counter_next + 
-            w_ov1 * m.low_override_r1_next + 
-            w_ov2 * m.low_override_r2_next
+            w['intercept'] +   
+            w['T1'] * ((m.T1_next - 22.0) / 8.0) +  
+            w['T2'] * ((m.T2_next - 22.0) / 8.0) + 
+            w['H'] * ((m.H_next - 40.0) / 40.0) +
+            w['vent_counter'] * (m.vent_counter_next / 3.0) + 
+            w['low_override_r1'] * m.ov1_next + 
+            w['low_override_r2'] * m.ov2_next +
+            w['price_t'] * (expected_price_next / 10.0) +
+            w['price_previous'] * (state['price_t'] / 10.0) + 
+            w['Occ1'] * ((expected_occ1_next - 20.0) / 30.0) +
+            w['Occ2'] * ((expected_occ2_next - 10.0) / 20.0)
         )
     else:
-        # end of the day no cost
+        # end of the day: future cost is zero 
         expected_future_cost = 0.0
 
     m.obj = Objective(expr=immediate_cost + expected_future_cost, sense=minimize)
 
-    #SOLVER
+    # SOLVER
     solver = SolverFactory('gurobi')
     solver.solve(m, tee=False)
-
 
     return {
         "HeatPowerRoom1": value(m.p1),

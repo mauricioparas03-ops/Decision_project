@@ -4,7 +4,8 @@ from policies.dummy_policy import select_action as dummy_action
 #from policies.dummy_policy import select_action
 # from policies.lookahead_policy import select_action
 #from policies.SP_policy import select_action
-from policies.multiSP import select_action
+from policies.ADP_policy import select_action
+#from policies.multiSP import select_action
 
 from Data.v2_SystemCharacteristics import get_fixed_data
 import pandas as pd
@@ -76,10 +77,7 @@ for day in range(E_days):
         # COST AND DYNAMICS
         # cost after overrules; pass the day's exogenous arrays so the
         # environment values from the CSV are used for the "real" next state
-        state, real_cost = apply_dynamics(state, decision, data,
-                          day_occ1=day_occ1,
-                          day_occ2=day_occ2,
-                          day_prices=day_prices)
+        state, real_cost = apply_dynamics(state, decision, data)
         cost_of_this_day += real_cost
 
         # --- per-timestep logging ---
