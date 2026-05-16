@@ -76,10 +76,7 @@ for day in range(E_days):
         # COST AND DYNAMICS
         # cost after overrules; pass the day's exogenous arrays so the
         # environment values from the CSV are used for the "real" next state
-        state, real_cost = apply_dynamics(state, decision, data,
-                          day_occ1=day_occ1,
-                          day_occ2=day_occ2,
-                          day_prices=day_prices)
+        state, real_cost = apply_dynamics(state, decision, data)
         cost_of_this_day += real_cost
 
         # --- per-timestep logging ---

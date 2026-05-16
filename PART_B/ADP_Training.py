@@ -70,23 +70,15 @@ def get_normalized_features(state):
 def solve_bellman_equation_milp(state, next_t_weights):
     
     m = ConcreteModel()
-    # Overrule stato corrente (vincola l'azione here-and-now)
-    if state['low_override_r1'] == 1 and state['T1'] < data['temp_OK_threshold']:
-        m.p1.fix(data['heating_max_power'])
-    if state['T1'] > data['temp_max_comfort_threshold']:
-        m.p1.fix(0)
-
-    if state['low_override_r2'] == 1 and state['T2'] < data['temp_OK_threshold']:
-        m.p2.fix(data['heating_max_power'])
-    if state['T2'] > data['temp_max_comfort_threshold']:
-        m.p2.fix(0)
-
-    if state['H'] > data['humidity_threshold'] or \
-    (state['vent_counter'] > 0 and state['vent_counter'] < data['vent_min_up_time']):
-        m.v.fix(1)
     m.p1 = Var(bounds=(0, data['heating_max_power']))
     m.p2 = Var(bounds=(0, data['heating_max_power']))
     m.v = Var(domain=Binary)
+
+    if state['T1'] > data['temp_max_comfort_threshold']: m.p1.fix(0)
+    elif state['T1'] < data['temp_min_comfort_threshold'] or state['low_override_r1'] == 1: m.p1.fix(data['heating_max_power'])
+    if state['T2'] > data['temp_max_comfort_threshold']: m.p2.fix(0)
+    elif state['T2'] < data['temp_min_comfort_threshold'] or state['low_override_r2'] == 1: m.p2.fix(data['heating_max_power'])
+    if state['H'] > data['humidity_threshold'] or state['vent_counter'] in [1, 2]: m.v.fix(1)
 
     scen_data = []
     for _ in range(K_SCENARIOS):
@@ -98,16 +90,16 @@ def solve_bellman_equation_milp(state, next_t_weights):
     m.Scen = RangeSet(0, K_SCENARIOS - 1)
     m.T1_next = Var(m.Scen); m.T2_next = Var(m.Scen)
     m.H_next = Var(m.Scen)
-    m.s = Var(domain=Binary)
     m.ov1_next = Var(m.Scen, domain=Binary)
     m.ov2_next = Var(m.Scen, domain=Binary)
     m.vc_next = Var(domain=NonNegativeReals)
 
+    #counter update
+    m.c_vc = Constraint(expr=m.vc_next == (state['vent_counter'] + 1) * m.v)
     immediate_cost = state['price_t'] * (m.p1 + m.p2 + m.v * data['ventilation_power'])
     expected_future_cost = 0
     tout = data['outdoor_temperature'][int(state['current_time'])]
     M, eps = 500, 0.001 
-    v_prev = 1 if state['vent_counter'] > 0 else 0
     
     # =========================================================
     # 1. DICHIARAZIONE VARIABILI INDICIZZATE
@@ -115,11 +107,8 @@ def solve_bellman_equation_milp(state, next_t_weights):
     # Creiamo direttamente vettori di variabili per tutti gli scenari
     m.y_low_r1 = Var(m.Scen, domain=Binary)
     m.y_ok_r1  = Var(m.Scen, domain=Binary)
-    m.y_high_r1 = Var(m.Scen, domain=Binary)
     m.y_low_r2 = Var(m.Scen, domain=Binary)
     m.y_ok_r2  = Var(m.Scen, domain=Binary)
-    m.y_high_r2 = Var(m.Scen, domain=Binary)
-
 
     # =========================================================
     # 2. VINCOLI DI DINAMICA FISICA (Applicati a tutti i k)
@@ -142,22 +131,13 @@ def solve_bellman_equation_milp(state, next_t_weights):
         m.H_next[k] == state['H'] - data['humidity_vent_coeff']*m.v + 
                        data['humidity_occupancy_coeff']*(state['Occ1']+state['Occ2']))
 
-    # Temperature Cutoff and heater deactivation
-    m.cutoff_r1 = Constraint(m.Scen, rule=lambda m, k: m.T1_next[k] >= data['temp_max_comfort_threshold'] - M*(1 - m.y_high_r1[k]))
-    m.cutoff_r2 = Constraint(m.Scen, rule=lambda m, k: m.T2_next[k] >= data['temp_max_comfort_threshold'] - M*(1 - m.y_high_r2[k]))
-    m.cutin_r1 = Constraint(m.Scen, rule=lambda m, k: m.T1_next[k] <= data['temp_max_comfort_threshold'] + M * m.y_high_r1[k])
-    m.cutin_r2 = Constraint(m.Scen, rule=lambda m, k: m.T2_next[k] <= data['temp_max_comfort_threshold'] + M * m.y_high_r2[k])
-
-    # Overrule forcing heater to 0
-    m.overrule_r1 = Constraint(m.Scen, rule=lambda m, k: m.p1 <= data['heating_max_power'] * (1 - m.y_high_r1[k]))
-    m.overrule_r2 = Constraint(m.Scen, rule=lambda m, k: m.p2 <= data['heating_max_power'] * (1 - m.y_high_r2[k]))
     # =========================================================
     # 3. LOGICA OVERRULE STANZA 1
     # =========================================================
     u_prev_r1 = state['low_override_r1']
     
-    m.c_ylow_r1_a = Constraint(m.Scen, rule=lambda m, k: m.T1_next[k] <= data['temp_min_comfort_threshold'] + M*(1 - m.y_low_r1[k]))
-    m.c_ylow_r1_b = Constraint(m.Scen, rule=lambda m, k: m.T1_next[k] >= data['temp_min_comfort_threshold'] - M*m.y_low_r1[k])
+    m.c_ylow_r1_a = Constraint(m.Scen, rule=lambda m, k: m.T1_next[k] <= data['temp_min_comfort_threshold'] + eps + M*(1 - m.y_low_r1[k]))
+    m.c_ylow_r1_b = Constraint(m.Scen, rule=lambda m, k: m.T1_next[k] >= data['temp_min_comfort_threshold'] + eps - M*m.y_low_r1[k])
     m.c_yok_r1_a = Constraint(m.Scen, rule=lambda m, k: m.T1_next[k] >= data['temp_OK_threshold'] - M*(1 - m.y_ok_r1[k]))
     m.c_yok_r1_b = Constraint(m.Scen, rule=lambda m, k: m.T1_next[k] <= data['temp_OK_threshold'] + M*m.y_ok_r1[k])
 
@@ -171,8 +151,8 @@ def solve_bellman_equation_milp(state, next_t_weights):
     # =========================================================
     u_prev_r2 = state['low_override_r2']
     
-    m.c_ylow_r2_a = Constraint(m.Scen, rule=lambda m, k: m.T2_next[k] <= data['temp_min_comfort_threshold'] + M*(1 - m.y_low_r2[k]))
-    m.c_ylow_r2_b = Constraint(m.Scen, rule=lambda m, k: m.T2_next[k] >= data['temp_min_comfort_threshold'] - M*m.y_low_r2[k])
+    m.c_ylow_r2_a = Constraint(m.Scen, rule=lambda m, k: m.T2_next[k] <= data['temp_min_comfort_threshold'] + eps + M*(1 - m.y_low_r2[k]))
+    m.c_ylow_r2_b = Constraint(m.Scen, rule=lambda m, k: m.T2_next[k] >= data['temp_min_comfort_threshold'] + eps - M*m.y_low_r2[k])
     m.c_yok_r2_a  = Constraint(m.Scen, rule=lambda m, k: m.T2_next[k] >= data['temp_OK_threshold'] - M*(1 - m.y_ok_r2[k]))
     m.c_yok_r2_b  = Constraint(m.Scen, rule=lambda m, k: m.T2_next[k] <= data['temp_OK_threshold'] + M*m.y_ok_r2[k])
 
@@ -180,29 +160,6 @@ def solve_bellman_equation_milp(state, next_t_weights):
     m.c_prevent_override_without_cold_r2 = Constraint(m.Scen, rule=lambda m, k: m.ov2_next[k] <= u_prev_r2 + m.y_low_r2[k])
     m.c_keep_override_ON_until_ok_r2 = Constraint(m.Scen, rule=lambda m, k: m.ov2_next[k] >= u_prev_r2 - m.y_ok_r2[k])
     m.c_force_override_OFF_if_ok_r2 = Constraint(m.Scen, rule=lambda m, k: m.ov2_next[k] <= 1 - m.y_ok_r2[k])
-
-    # Overrule controller forcing heater to maximum
-    m.max_r1 = Constraint(m.Scen, rule=lambda m, k: m.p1 >= data['heating_max_power'] * m.ov1_next[k])
-    m.max_r2 = Constraint(m.Scen, rule=lambda m, k: m.p2 >= data['heating_max_power'] * m.ov2_next[k])
-
-    m.c_startup_lb = Constraint(rule=lambda m : m.s >= m.v - v_prev)
-
-    # ── Constraint 2: s_t <= v_t  (startup solo se ventilazione è attiva)
-    m.c_startup_ub1 = Constraint(rule=lambda m : m.s <= m.v)
-
-    # ── Constraint 3: s_t <= 1 - v_{t-1}  (startup solo se prima era spenta)
-    if state['current_time'] > 0:
-        m.c_startup_ub2 = Constraint(rule=lambda m : m.s <= 1 - v_prev)
-    
-    remaining_uptime = data["vent_min_up_time"] - state['vent_counter']
-    if state['vent_counter'] > 0 and remaining_uptime > 0:
-        m.v.fix(1)   # già presente nel tuo codice con [1,2]
-        
-    #humidity triggered ventilation
-    m.humidity_trigger = Constraint(m.Scen, rule=lambda m, k: m.H_next[k] <= data['humidity_threshold'] + M*m.v)
-
-    # Ventilation counter evolution (non-negative real representing future vent counter)
-    m.c_vc = Constraint(expr=m.vc_next == (state['vent_counter'] + 1) * m.v)
 
     if next_t_weights:
         # Calcoliamo il costo atteso sommando tutti gli scenari k in m.Scen
