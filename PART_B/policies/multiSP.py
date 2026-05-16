@@ -14,7 +14,7 @@ from Data.OccupancyProcessRestaurant import next_occupancy_levels
 # ── Hyper-parameters ───────────────────────────────────────────────────────────
 HORIZON_MULTI = 4    
 N_CLUSTERS    = 3 
-BRANCHING_FACTOR = 50
+BRANCHING_FACTOR = 100
 
 # ── System Parameters ─────────────────────────────────
 DATA = get_fixed_data()
