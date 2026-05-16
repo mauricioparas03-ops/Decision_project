@@ -427,10 +427,7 @@ def _path_to_root(tree, leaf_id):
 
 
 def _descendants_chain(tree, nid, L):
-    """
-    Return up to L successive nodes starting from nid, following first child.
-    Used for the minimum-uptime window.
-    """
+
     chain   = [nid]
     current = nid
     for _ in range(L - 1):

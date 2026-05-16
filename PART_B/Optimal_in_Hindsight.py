@@ -189,6 +189,9 @@ _occ1 = pd.read_csv(data_dir / "OccupancyRoom1.csv").values.flatten()
 _occ2 = pd.read_csv(data_dir / "OccupancyRoom2.csv").values.flatten()
 _df_prices = pd.read_csv(data_dir / "v2_PriceData.csv").values.flatten()
 daily_costs = []
+daily_vent_hours   = []
+daily_overrule_acts = []
+daily_energy_kwh   = []
 # solve the optimization problem for each day and store results
 for day in range(days):
     print(f"Solving MILP for Day {day + 1}...", flush=True)
@@ -197,6 +200,29 @@ for day in range(days):
     prices = _df_prices[day * _num_timeslots : (day + 1) * _num_timeslots]
     p_opt, v_opt, temp_opt, hum_opt, total_cost = solve_MILP(occ1, occ2, prices)
     daily_costs.append(total_cost)
+
+    # --- per-day logging ---
+    vent_hours    = sum(1 for t in range(_num_timeslots) if v_opt[t] > 0.5)
+    
+    overrule_acts = sum(
+        1 for t in range(_num_timeslots)
+        if (temp_opt[1, t] < _data_fixed['temp_min_comfort_threshold'] or
+            temp_opt[2, t] < _data_fixed['temp_min_comfort_threshold'] or
+            temp_opt[1, t] > _data_fixed['temp_max_comfort_threshold'] or
+            temp_opt[2, t] > _data_fixed['temp_max_comfort_threshold'] or
+            hum_opt[t] > _data_fixed['humidity_threshold'])
+    )
+    
+    energy_kwh = sum(
+        p_opt[r, t] for r in [1, 2] for t in range(_num_timeslots)) + sum(
+        v_opt[t] * _data_fixed['ventilation_power'] for t in range(_num_timeslots)
+    )
+    
+    daily_vent_hours.append(vent_hours)
+    daily_overrule_acts.append(overrule_acts)
+    daily_energy_kwh.append(energy_kwh)
+    
+
 
 
 daily_costs = np.array(daily_costs, dtype=float)
@@ -221,3 +247,28 @@ for idx, cost in enumerate(daily_costs[:10], start=1):
     print(f"  Day {idx:>2}: {cost:,.2f} DKK")
 print("=" * 52)
 
+
+daily_costs      = np.array(daily_costs, dtype=float)
+daily_vent_hours = np.array(daily_vent_hours, dtype=float)
+daily_overrule_acts = np.array(daily_overrule_acts, dtype=float)
+daily_energy_kwh = np.array(daily_energy_kwh, dtype=float)
+daily_pw_cost    = np.where(daily_energy_kwh > 0, daily_costs / daily_energy_kwh, 0.0)
+
+np.savez(
+    "results_hindsight.npz",
+    daily_costs         = daily_costs,
+    daily_vent_hours    = daily_vent_hours,
+    daily_overrule_acts = daily_overrule_acts,
+    daily_energy_kwh    = daily_energy_kwh,
+    daily_pw_cost       = daily_pw_cost,
+)
+
+print(f"\n{'='*55}")
+print(f"Summary for: hindsight")
+print(f"{'='*55}")
+print(f"  Avg daily cost         : {np.mean(daily_costs):.4f}  ± {np.std(daily_costs):.4f}")
+print(f"  Avg vent hours/day     : {np.mean(daily_vent_hours):.2f}   ± {np.std(daily_vent_hours):.2f}")
+print(f"  Avg overrule acts/day  : {np.mean(daily_overrule_acts):.2f}   ± {np.std(daily_overrule_acts):.2f}")
+print(f"  Avg energy/day (kWh)   : {np.mean(daily_energy_kwh):.4f}  ± {np.std(daily_energy_kwh):.4f}")
+print(f"  Avg price-wtd cost     : {np.mean(daily_pw_cost):.4f}  ± {np.std(daily_pw_cost):.4f}")
+print(f"{'='*55}")
