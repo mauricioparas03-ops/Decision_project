@@ -213,15 +213,15 @@ def build_multisp_model(state, tree, horizon):
         for stage_idx in range(min(remaining_uptime, horizon)):
             for node in tree[stage_idx]:
                 m.Vent[node['id']].fix(1)
+    for r in [1, 2]:
+        temp_now = state["T1"] if r == 1 else state["T2"]
+        if low_override[r]: 
+            m.Heat[r, root_id].fix(m.Pr) 
+        if temp_now >= m.Thigh: 
+            m.Heat[r, root_id].fix(0)
+    if state['H'] > m.Hhigh:
+        m.Vent[root_id].fix(1)
     
-    # Root Node Initial Conditions
-    def root_temp_init_rule(m, r):
-        return m.T_in[r, root_id] == T_init[r]
-    m.RootTempInit = Constraint(m.R, rule=root_temp_init_rule)
-
-    def root_hum_init_rule(m):
-        return m.Hum[root_id] == H_init
-    m.RootHumInit = Constraint(rule=root_hum_init_rule)
 
     # Dynamics: Child node state = f(Parent state, Parent decision)
     def thermal_dynamics_rule(m, r, n):
