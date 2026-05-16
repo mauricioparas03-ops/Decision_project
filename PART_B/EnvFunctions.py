@@ -1,7 +1,7 @@
 from Data.PriceProcessRestaurant import price_model 
 from Data.OccupancyProcessRestaurant import next_occupancy_levels
 
-def apply_dynamics(state, decisions, data, day_occ1=None, day_occ2=None, day_prices=None):
+def apply_dynamics(state, decisions, data):
     """
     Advance the real system state by one timestep.
 
@@ -109,25 +109,6 @@ def apply_dynamics(state, decisions, data, day_occ1=None, day_occ2=None, day_pri
         low_override_r2_next = 1
     else:
         low_override_r2_next = 0
-
-
-    # Determine next-step exogenous values.
-    # If the Environment provides the day's arrays (day_occ1/day_occ2/day_prices),
-    # use them (historical CSV values). Otherwise fall back to the stochastic
-    # models in this module.
-    if t + 1 < len(day_occ1):
-        occ1_next = float(day_occ1[t + 1])
-    else:
-        occ1_next = float(o1)
-    if t + 1 < len(day_occ2):
-        occ2_next = float(day_occ2[t + 1])
-    else:
-        occ2_next = float(o2)
-    if t + 1 < len(day_prices):
-        price_next = float(day_prices[t + 1])
-    else:
-        price_next = float(state['price_t'])
-
     
     
     # REAL COST
@@ -143,10 +124,10 @@ def apply_dynamics(state, decisions, data, day_occ1=None, day_occ2=None, day_pri
         'T1': T1_next,
         'T2': T2_next,
         'H': H_next,
-        'Occ1': occ1_next,
-        'Occ2': occ2_next,
-        'price_t': price_next, 
-        'price_previous': state["price_t"], 
+        'Occ1': o1,
+        'Occ2': o2,
+        'price_t': state['price_t'],
+        'price_previous': state["price_previous"],
         'vent_counter': vent_counter_next,
         'low_override_r1': low_override_r1_next,
         'low_override_r2': low_override_r2_next,
