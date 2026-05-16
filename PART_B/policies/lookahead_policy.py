@@ -237,6 +237,9 @@ def build_lookahead_model(current_state, price_dict, occ_dict,
     # -----------------------------------------------------------------------------
     # 7) Ventilation Constraints (Startup, Min-Up Time, Humidity)
     # -----------------------------------------------------------------------------
+
+    #Controllare che ho un vent che dura sempre almeno 3 ore
+
     def s_rule1(m, t):
         v_prev = m.VentInit if t == 0 else m.Vent[t-1]
         return m.s[t] >= m.Vent[t] - v_prev
