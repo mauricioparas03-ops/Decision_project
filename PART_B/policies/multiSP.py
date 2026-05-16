@@ -315,7 +315,7 @@ def build_multisp_model(state, tree, horizon):
         tau_n = node_stage[n] 
         if tau_n == 1:
             # Logic for root depends on the passed state 'low_override'
-            return m.u[r, n] == low_override[r] + m.y_low[r, n]
+            return m.u[r, n] <= low_override[r] + m.y_low[r, n]
         p_id = nodes_map[n]['parent_id']
         return m.u[r, n] <= m.u[r, p_id] + m.y_low[r, n]
     
@@ -325,7 +325,7 @@ def build_multisp_model(state, tree, horizon):
     def u_memory_rule2(m, r, n):
         tau_n = node_stage[n] 
         if tau_n == 1:
-            return m.u[r, n] == low_override[r] - m.y_ok[r, n]
+            return m.u[r, n] >= low_override[r] - m.y_ok[r, n]
         p_id = nodes_map[n]['parent_id']
         return m.u[r, n] >= m.u[r, p_id] - m.y_ok[r, n]
     m.c_u4 = Constraint(m.RN, rule=u_memory_rule2)
