@@ -31,6 +31,10 @@ power_max = {1: data['heating_max_power'], 2: data['heating_max_power']}
 E_days = 100
 T_hours = 10
 daily_costs = np.zeros(E_days)
+daily_vent_hours     = np.zeros(E_days)
+daily_overrule_acts  = np.zeros(E_days)
+daily_energy_kwh     = np.zeros(E_days)
+daily_pw_cost        = np.zeros(E_days)
 
 print(f"Running simulation for {E_days} days...", flush=True)
 
@@ -77,6 +81,24 @@ for day in range(E_days):
                           day_occ2=day_occ2,
                           day_prices=day_prices)
         cost_of_this_day += real_cost
+
+        # --- per-timestep logging ---
+        vent_was_on = int(state['vent_counter'] > 0)
+        p1 = decision.get('HeatPowerRoom1', 0)
+        p2 = decision.get('HeatPowerRoom2', 0)
+
+        overrule_fired = int(
+            state['low_override_r1']
+            or state['low_override_r2']
+            or (state['H'] > data['humidity_threshold'])
+            or (state['vent_counter'] in [1, 2])
+        )
+
+        step_energy = p1 + p2 + vent_was_on * data['ventilation_power']
+
+        daily_vent_hours[day]    += vent_was_on
+        daily_overrule_acts[day] += overrule_fired
+        daily_energy_kwh[day]    += step_energy
     
     # 6. TRANSITION (exogenous - Uncertainty "Real" revealed by the historical CSV data)
         if t + 1 < T_hours:
@@ -88,8 +110,21 @@ for day in range(E_days):
         print(f"Day {day}, Time {t}: Decision taken: {decision}, override: {state['low_override_r1']}, {state['low_override_r2']}", flush=True)
     # Save the total cost of this day
     daily_costs[day] = cost_of_this_day
+    daily_pw_cost[day] = (cost_of_this_day / daily_energy_kwh[day]
+                          if daily_energy_kwh[day] > 0 else 0.0)
 
     if (day + 1) % 10 == 0:
         print(f"Completed day {day + 1}/{E_days}", flush=True)
 
 print(f"Cost average over {E_days} days: {np.mean(daily_costs):.2f}", flush=True)
+policy_name = "dummy"  # dummy, lookahead, SP, multiSP, hindsight
+
+np.savez(
+    f"results_{policy_name}.npz",
+    daily_costs         = daily_costs,
+    daily_vent_hours    = daily_vent_hours,
+    daily_overrule_acts = daily_overrule_acts,
+    daily_energy_kwh    = daily_energy_kwh,
+    daily_pw_cost       = daily_pw_cost,
+)
+print(f"Results saved to results_{policy_name}.npz")
