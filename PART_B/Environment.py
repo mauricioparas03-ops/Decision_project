@@ -4,7 +4,7 @@ from policies.dummy_policy import select_action as dummy_action
 #from policies.dummy_policy import select_action
 # from policies.lookahead_policy import select_action
 #from policies.SP_policy import select_action
-from policies.lookahead_policy import select_action
+from policies.multSP_policy import select_action
 
 from Data.v2_SystemCharacteristics import get_fixed_data
 import pandas as pd
@@ -194,7 +194,7 @@ for day in range(E_days):
         decision = select_action(state)
 
         # VERIFY FEASIBILITY
-        decision = action = check_and_sanitize_action(select_action, state, power_max)
+        #decision = action = check_and_sanitize_action(select_action, state, power_max)
         is_feasible = check_feasibility(decision, power_max)
         if not is_feasible:
             print(f"Day {day}, Time {t}: Infeasible! Using dummy.")

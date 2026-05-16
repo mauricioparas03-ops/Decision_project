@@ -34,16 +34,16 @@ from Data.v2_SystemCharacteristics import get_fixed_data
 
 # ── Hyper-parameters ───────────────────────────────────────────────────────────
 HORIZON_MULTI = 4    # lookahead steps (must be >= 3 due to vent-inertia)
-GEN_SCENARIOS = 500  # raw Monte Carlo paths before tree clustering
+GEN_SCENARIOS = 300  # raw Monte Carlo paths before tree clustering
 N_CLUSTERS    = 3 
-BRANCHING_FACTORS = [10, 10, 10, 10] 
+BRANCHING_FACTORS = [5,4,3,3] 
 
 # =============================================================================
 # 1. SYSTEM PARAMETERS
 # =============================================================================
 
 DATA = get_fixed_data()
-
+#print(DATA['outdoor_temperature'])
 
 # =============================================================================
 # 2. STOCHASTIC PROCESS MODELS
@@ -102,61 +102,61 @@ def next_occupancy_levels(r1_current, r2_current, rng=None):
 # 3. SCENARIO GENERATION
 # =============================================================================
 
-# def generate_scenarios(price_now, price_prev,
-#                        occ_r1_now, occ_r2_now,
-#                        horizon, n_scenarios, rng):
-#     """
-#     Draw n_scenarios independent Monte-Carlo paths over horizon steps.
+def generate_scenarios(price_now, price_prev,
+                       occ_r1_now, occ_r2_now,
+                       horizon, n_scenarios, rng):
+    """
+    Draw n_scenarios independent Monte-Carlo paths over horizon steps.
 
-#     Returns
-#     -------
-#     price_dict   : {(t, s): float}
-#     occ_dict     : {(r, t, s): float}
-#     hum_occ_dict : {(t, s): float}
-#     """
-#     price_dict   = {}
-#     occ_dict     = {}
-#     hum_occ_dict = {}
-
-#     for s in range(n_scenarios):
-#         p_cur,  p_prev  = price_now,  price_prev
-#         o1_cur, o2_cur  = occ_r1_now, occ_r2_now
-
-#         for t in range(horizon):
-#             p_next           = price_model(p_cur, p_prev, rng)
-#             o1_next, o2_next = next_occupancy_levels(o1_cur, o2_cur, rng)
-
-#             price_dict[t, s]   = p_next
-#             occ_dict[1, t, s]  = o1_next
-#             occ_dict[2, t, s]  = o2_next
-#             hum_occ_dict[t, s] = o1_next + o2_next
-
-#             p_prev, p_cur   = p_cur,  p_next
-#             o1_cur, o2_cur  = o1_next, o2_next
-
-#     return price_dict, occ_dict, hum_occ_dict
-
-
-def generate_scenarios(price_now, price_prev, occ_r1_now, occ_r2_now, horizon, n_scenarios):
-    price_dict = {}
-    occ_dict = {}
+    Returns
+    -------
+    price_dict   : {(t, s): float}
+    occ_dict     : {(r, t, s): float}
+    hum_occ_dict : {(t, s): float}
+    """
+    price_dict   = {}
+    occ_dict     = {}
+    hum_occ_dict = {}
 
     for s in range(n_scenarios):
-        p_cur, p_prev = price_now, price_prev
-        o1_cur, o2_cur = occ_r1_now, occ_r2_now
+        p_cur,  p_prev  = price_now,  price_prev
+        o1_cur, o2_cur  = occ_r1_now, occ_r2_now
 
         for t in range(horizon):
-            p_next = price_model(p_cur, p_prev)
-            o1_next, o2_next = next_occupancy_levels(o1_cur, o2_cur)
+            p_next           = price_model(p_cur, p_prev, rng)
+            o1_next, o2_next = next_occupancy_levels(o1_cur, o2_cur, rng)
 
-            price_dict[t, s] = float(p_next)
-            occ_dict[1, t, s] = float(o1_next)
-            occ_dict[2, t, s] = float(o2_next)
+            price_dict[t, s]   = p_next
+            occ_dict[1, t, s]  = o1_next
+            occ_dict[2, t, s]  = o2_next
+            hum_occ_dict[t, s] = o1_next + o2_next
 
-            p_prev, p_cur = p_cur, p_next
-            o1_cur, o2_cur = o1_next, o2_next
+            p_prev, p_cur   = p_cur,  p_next
+            o1_cur, o2_cur  = o1_next, o2_next
 
-    return price_dict, occ_dict
+    return price_dict, occ_dict, hum_occ_dict
+
+
+# def generate_scenarios(price_now, price_prev, occ_r1_now, occ_r2_now, horizon, n_scenarios):
+#     price_dict = {}
+#     occ_dict = {}
+
+#     for s in range(n_scenarios):
+#         p_cur, p_prev = price_now, price_prev
+#         o1_cur, o2_cur = occ_r1_now, occ_r2_now
+
+#         for t in range(horizon):
+#             p_next = price_model(p_cur, p_prev)
+#             o1_next, o2_next = next_occupancy_levels(o1_cur, o2_cur)
+
+#             price_dict[t, s] = float(p_next)
+#             occ_dict[1, t, s] = float(o1_next)
+#             occ_dict[2, t, s] = float(o2_next)
+
+#             p_prev, p_cur = p_cur, p_next
+#             o1_cur, o2_cur = o1_next, o2_next
+
+#     return price_dict, occ_dict
 
 
 
@@ -221,100 +221,101 @@ def generate_tree_scenarios(price_now, price_prev, occ_r1_now, occ_r2_now,
 # 4. SCENARIO TREE CONSTRUCTION  (recursive conditional K-Means)
 # =============================================================================
 
-# def cluster_scenarios_tree(price_dict, occ_dict, n_branches, horizon,
-#                            scenarios_to_generate):
-#     """
-#     Build a scenario tree by recursive conditional K-Means clustering.
+def cluster_scenarios_tree(price_dict, occ_dict, n_branches, horizon,
+                           scenarios_to_generate):
+    """
+    Build a scenario tree by recursive conditional K-Means clustering.
 
-#     At each stage t, clusters the t-th observation within each group of
-#     scenarios that shared the same node at t-1.
+    At each stage t, clusters the t-th observation within each group of
+    scenarios that shared the same node at t-1.
 
-#     Returns
-#     -------
-#     tree : dict  node_id -> {
-#         't'        : int,
-#         'parent'   : int or None,
-#         'children' : list[int],
-#         'scenarios': list[int],
-#         'centroid' : dict  {'price', 'occ1', 'occ2', 'hum_occ'} or None (root),
-#         'cond_prob': float,
-#         'path_prob': float,
-#     }
-#     """
-#     tree = {
-#         0: {
-#             't'        : 0,
-#             'parent'   : None,
-#             'children' : [],
-#             'scenarios': list(range(scenarios_to_generate)),
-#             'centroid' : None,
-#             'cond_prob': 1.0,
-#             'path_prob': 1.0,
-#         }
-#     }
+    Returns
+    -------
+    tree : dict  node_id -> {
+        't'        : int,
+        'parent'   : int or None,
+        'children' : list[int],
+        'scenarios': list[int],
+        'centroid' : dict  {'price', 'occ1', 'occ2', 'hum_occ'} or None (root),
+        'cond_prob': float,
+        'path_prob': float,
+    }
+    """
+    tree = {
+        0: {
+            't'        : 0,
+            'parent'   : None,
+            'children' : [],
+            'scenarios': list(range(scenarios_to_generate)),
+            'centroid' : None,
+            'cond_prob': 1.0,
+            'path_prob': 1.0,
+        }
+    }
 
-#     node_counter           = 1
-#     nodes_at_current_stage = [0]
+    node_counter           = 1
+    nodes_at_current_stage = [0]
 
-#     for t in range(horizon):
-#         nodes_at_next_stage = []
+    for t in range(horizon):
+        nodes_at_next_stage = []
 
-#         for parent_id in nodes_at_current_stage:
-#             parent_node      = tree[parent_id]
-#             member_scenarios = parent_node['scenarios']
-#             n_parent         = len(member_scenarios)
-#             k                = min(n_branches, n_parent)
+        for parent_id in nodes_at_current_stage:
+            parent_node      = tree[parent_id]
+            member_scenarios = parent_node['scenarios']
+            n_parent         = len(member_scenarios)
+            k                = min(n_branches, n_parent)
 
-#             X_t = np.array([
-#                 [price_dict[t, s], occ_dict[1, t, s], occ_dict[2, t, s]]
-#                 for s in member_scenarios
-#             ])
+            X_t = np.array([
+                [price_dict[t, s], occ_dict[1, t, s], occ_dict[2, t, s]]
+                for s in member_scenarios
+            ])
 
-#             scaler     = StandardScaler()
-#             X_t_scaled = scaler.fit_transform(X_t)
+            scaler     = StandardScaler()
+            X_t_scaled = scaler.fit_transform(X_t)
+            random_seed = 42 + t
 
-#             km = KMeans(n_clusters=k, n_init=10, random_state=42)
-#             km.fit(X_t_scaled)
+            km = KMeans(n_clusters=k, n_init=10, random_state=random_seed)
+            km.fit(X_t_scaled)
 
-#             centroids_raw = scaler.inverse_transform(km.cluster_centers_)
+            centroids_raw = scaler.inverse_transform(km.cluster_centers_)
 
-#             for cluster_label in range(k):
-#                 child_scenarios = [
-#                     s for s, lbl in zip(member_scenarios, km.labels_)
-#                     if lbl == cluster_label
-#                 ]
+            for cluster_label in range(k):
+                child_scenarios = [
+                    s for s, lbl in zip(member_scenarios, km.labels_)
+                    if lbl == cluster_label
+                ]
 
-#                 cond_prob = len(child_scenarios) / n_parent
-#                 path_prob = parent_node['path_prob'] * cond_prob
+                cond_prob = len(child_scenarios) / n_parent
+                path_prob = parent_node['path_prob'] * cond_prob
 
-#                 c        = centroids_raw[cluster_label]
-#                 centroid = {
-#                     'price'  : float(np.clip(c[0],  0, 12)),
-#                     'occ1'   : float(np.clip(c[1], 20, 50)),
-#                     'occ2'   : float(np.clip(c[2], 10, 30)),
-#                 }
-#                 centroid['hum_occ'] = centroid['occ1'] + centroid['occ2']
+                c        = centroids_raw[cluster_label]
+                centroid = {
+                    'price'  : float(np.clip(c[0],  0, 12)),
+                    'occ1'   : float(np.clip(c[1], 20, 50)),
+                    'occ2'   : float(np.clip(c[2], 10, 30)),
+                }
+                centroid['hum_occ'] = centroid['occ1'] + centroid['occ2']
 
-#                 child_id          = node_counter
-#                 tree[child_id]    = {
-#                     't'        : t + 1,
-#                     'parent'   : parent_id,
-#                     'children' : [],
-#                     'scenarios': child_scenarios,
-#                     'centroid' : centroid,
-#                     'cond_prob': cond_prob,
-#                     'path_prob': path_prob,
-#                 }
-#                 tree[parent_id]['children'].append(child_id)
-#                 nodes_at_next_stage.append(child_id)
-#                 node_counter += 1
+                child_id          = node_counter
+                tree[child_id]    = {
+                    't'        : t + 1,
+                    'parent'   : parent_id,
+                    'children' : [],
+                    'scenarios': child_scenarios,
+                    'centroid' : centroid,
+                    'cond_prob': cond_prob,
+                    'path_prob': path_prob,
+                }
+                tree[parent_id]['children'].append(child_id)
+                nodes_at_next_stage.append(child_id)
+                node_counter += 1
 
-#         nodes_at_current_stage = nodes_at_next_stage
+        nodes_at_current_stage = nodes_at_next_stage
 
-#     return tree
+    return tree
 
 
-def cluster_scenarios_tree2(price_dict, occ_dict, N_CLUSTERS, horizon):
+def cluster_scenarios_tree2(price_dict, occ_dict, N_CLUSTERS, horizon, rng):
     """
     Builds a scenario tree by recursive conditional K-Means clustering.
     Supports variable branching factors (non-symmetric trees).
@@ -365,7 +366,9 @@ def cluster_scenarios_tree2(price_dict, occ_dict, N_CLUSTERS, horizon):
             scaler = StandardScaler()
             X_t_scaled = scaler.fit_transform(X_t)
 
-            km = KMeans(n_clusters=k, n_init=20, random_state=42)
+            rng_seed = 42 + t
+
+            km = KMeans(n_clusters=k, n_init=20, random_state=rng_seed)
             km.fit(X_t_scaled)
 
             centroids_raw = scaler.inverse_transform(km.cluster_centers_)
@@ -419,7 +422,7 @@ def _path_to_root(tree, leaf_id):
     """
     path = []
     nid  = leaf_id
-    while nid is not None and nid != 0:
+    while nid is not None and nid != 0:   #nid != 0 
         path.append(nid)
         nid = tree[nid]['parent']
     return path
@@ -477,7 +480,8 @@ def build_multisp_model(current_state, tree, horizon):
 
     # ── Node sets ─────────────────────────────────────────────────────────────
     all_nodes       = list(tree.keys())
-    decision_nodes  = [0] + [nid for nid in tree.keys() if nid != 0]  # ALL nodes (root + all non-root) - true here-and-now decisions from root
+    #decision_nodes  = [0] + [nid for nid in tree.keys() if nid != 0]  # ALL nodes (root + all non-root) - true here-and-now decisions from root
+    decision_nodes = [nid for nid in tree.keys() if nid != 0]   # non-root only
     internal_nodes  = [nid for nid, n in tree.items() if n['children'] and nid != 0]  # Nodes with children
     leaf_nodes      = [nid for nid, n in tree.items() if not n['children'] and nid != 0]  # Leaf nodes
     decision_set    = set(decision_nodes)
@@ -491,9 +495,14 @@ def build_multisp_model(current_state, tree, horizon):
         'occ1': current_state['Occ1'],
         'occ2': current_state['Occ2'],
     }
-    price_by_node  = {0: root_centroid['price']}
-    occ1_by_node   = {0: root_centroid['occ1']}
-    occ2_by_node   = {0: root_centroid['occ2']}
+    # price_by_node  = {0: root_centroid['price']}
+    # occ1_by_node   = {0: root_centroid['occ1']}
+    # occ2_by_node   = {0: root_centroid['occ2']}
+
+    price_by_node  = {}
+    occ1_by_node   = {}
+    occ2_by_node   = {}
+
     # Add non-root nodes
     for nid in [n for n in tree.keys() if n != 0]:
         price_by_node[nid] = tree[nid]['centroid']['price']
@@ -544,9 +553,14 @@ def build_multisp_model(current_state, tree, horizon):
     m.M_temp = Param(initialize=100.0)
     m.M_hum  = Param(initialize=100.0)
     m.U_vent = Param(initialize=d['vent_min_up_time'])
-    m.Tout   = Param(range(horizon),
-                     initialize={t: d['outdoor_temperature'][t] for t in range(horizon)})
-    
+    #m.Tout   = Param(range(horizon),
+     #                initialize={t: d['outdoor_temperature'][t] for t in range(horizon)})
+    _num_timeslots = int(d['num_timeslots'])
+
+    m.Tout = Param(range(horizon),
+                initialize={t: d['outdoor_temperature'][(current_state['current_time'] + t) % _num_timeslots]
+                            for t in range(horizon)})
+
     m.prices = Param(m.N_dec, initialize=price_by_node)
     m.O1     = Param(m.N_dec, initialize=occ1_by_node)
     m.O2     = Param(m.N_dec, initialize=occ2_by_node)
@@ -577,32 +591,68 @@ def build_multisp_model(current_state, tree, horizon):
         pid     = tree[nid]['parent']
         other_r = 2 if r == 1 else 1
 
+        # if pid == 0:
+        #     # State flows from root; decisions made AT nid (root has no vars)
+        #     t_root = tree[0]['t']   # = 0
+        #     if nid in leaf_set:
+        #         # Horizon=1 edge case: leaf whose parent is root, no decision
+        #         return m.T_in[r, nid] == (
+        #             m.T_in[r, 0]
+        #             + m.Zexch * (m.T_in[other_r, 0] - m.T_in[r, 0])
+        #             + m.Zloss * (m.Tout[t_root]      - m.T_in[r, 0])
+        #         )
+        #     return m.T_in[r, nid] == (
+        #         m.T_in[r, 0]
+        #         + m.Zexch * (m.T_in[other_r, 0] - m.T_in[r, 0])
+        #         + m.Zloss * (m.Tout[t_root]      - m.T_in[r, 0])
+        #         + m.Zconv * m.Heat[r, nid]
+        #         - m.Zcool * m.Vent[nid]
+        #         + m.Zocc  * occ(r, nid)
+        #     )
+
+        # # General case: pid is a non-root internal node
+        # t_parent = tree[pid]['t']
+        # if nid in leaf_set:
+        #     return m.T_in[r, nid] == (
+        #         m.T_in[r, pid]
+        #         + m.Zexch * (m.T_in[other_r, pid] - m.T_in[r, pid])
+        #         + m.Zloss * (m.Tout[t_parent]      - m.T_in[r, pid])
+        #         + m.Zconv * m.Heat[r, pid]
+        #         - m.Zcool * m.Vent[pid]
+        #         + m.Zocc  * occ(r, pid)
+        #     )
+        # return m.T_in[r, nid] == (
+        #     m.T_in[r, pid]
+        #     + m.Zexch * (m.T_in[other_r, pid] - m.T_in[r, pid])
+        #     + m.Zloss * (m.Tout[t_parent]      - m.T_in[r, pid])
+        #     + m.Zconv * m.Heat[r, pid]
+        #     - m.Zcool * m.Vent[pid]
+        #     + m.Zocc  * occ(r, pid)
+
         if pid == 0:
-            # State flows from root; decisions made AT nid (root has no vars)
-            t_root = tree[0]['t']   # = 0
+            t_idx = 0  # parent is root, which is at current_time → Tout[0]
             if nid in leaf_set:
-                # Horizon=1 edge case: leaf whose parent is root, no decision
                 return m.T_in[r, nid] == (
                     m.T_in[r, 0]
                     + m.Zexch * (m.T_in[other_r, 0] - m.T_in[r, 0])
-                    + m.Zloss * (m.Tout[t_root]      - m.T_in[r, 0])
+                    + m.Zloss * (m.Tout[t_idx]       - m.T_in[r, 0])
                 )
             return m.T_in[r, nid] == (
                 m.T_in[r, 0]
                 + m.Zexch * (m.T_in[other_r, 0] - m.T_in[r, 0])
-                + m.Zloss * (m.Tout[t_root]      - m.T_in[r, 0])
+                + m.Zloss * (m.Tout[t_idx]       - m.T_in[r, 0])
                 + m.Zconv * m.Heat[r, nid]
                 - m.Zcool * m.Vent[nid]
                 + m.Zocc  * occ(r, nid)
             )
 
-        # General case: pid is a non-root internal node
-        t_parent = tree[pid]['t']
+        # General case
+        t_idx = tree[pid]['t'] - 1  # parent's stage = correct Tout offset
         if nid in leaf_set:
             return m.T_in[r, nid] == (
                 m.T_in[r, pid]
                 + m.Zexch * (m.T_in[other_r, pid] - m.T_in[r, pid])
-                + m.Zloss * (m.Tout[t_parent]      - m.T_in[r, pid])
+                + m.Zloss * (m.Tout[t_idx]         - m.T_in[r, pid])
                 + m.Zconv * m.Heat[r, pid]
                 - m.Zcool * m.Vent[pid]
                 + m.Zocc  * occ(r, pid)
@@ -610,32 +660,60 @@ def build_multisp_model(current_state, tree, horizon):
         return m.T_in[r, nid] == (
             m.T_in[r, pid]
             + m.Zexch * (m.T_in[other_r, pid] - m.T_in[r, pid])
-            + m.Zloss * (m.Tout[t_parent]      - m.T_in[r, pid])
+            + m.Zloss * (m.Tout[t_idx]         - m.T_in[r, pid])
             + m.Zconv * m.Heat[r, pid]
             - m.Zcool * m.Vent[pid]
             + m.Zocc  * occ(r, pid)
         )
+
     m.TempDyn = Constraint(m.R * m.N, rule=temp_dynamics)
 
     # ── Humidity dynamics ─────────────────────────────────────────────────────
     
+    # def hum_dynamics(m, nid):
+    #     if nid == 0:
+    #         return m.Hum[nid] == H_init
+    #     pid = tree[nid]['parent']
+    #     if pid == 0:
+    #         if nid in leaf_set:
+    #             return m.Hum[nid] == m.Hum[0]
+    #         return m.Hum[nid] == (
+    #             m.Hum[0]
+    #             - m.Hvent * m.Vent[nid]
+    #             + m.Hocc * (m.O1[nid] + m.O2[nid])   # nid è in N_int, pid=0 non lo è
+    #         )
+    #     return m.Hum[nid] == (
+    #         m.Hum[pid]
+    #         - m.Hvent * m.Vent[pid]
+    #         + m.Hocc * (m.O1[pid] + m.O2[pid])        # pid è in N_int, coerente con temp_dynamics
+    # )
     def hum_dynamics(m, nid):
         if nid == 0:
             return m.Hum[nid] == H_init
         pid = tree[nid]['parent']
         if pid == 0:
             if nid in leaf_set:
+                # leaf whose parent is root: no decisions at leaf, use root state only
                 return m.Hum[nid] == m.Hum[0]
+            # stage-1 non-leaf: decisions live at nid, applied from root state
             return m.Hum[nid] == (
                 m.Hum[0]
                 - m.Hvent * m.Vent[nid]
-                + m.Hocc * (m.O1[nid] + m.O2[nid])   # nid è in N_int, pid=0 non lo è
+                + m.Hocc  * (m.O1[nid] + m.O2[nid])
+            )
+        # General case: transition from pid using pid's decisions
+        if nid in leaf_set:
+            # leaf: no decisions at nid, use parent's decisions
+            return m.Hum[nid] == (
+                m.Hum[pid]
+                - m.Hvent * m.Vent[pid]
+                + m.Hocc  * (m.O1[pid] + m.O2[pid])
             )
         return m.Hum[nid] == (
             m.Hum[pid]
             - m.Hvent * m.Vent[pid]
-            + m.Hocc * (m.O1[pid] + m.O2[pid])        # pid è in N_int, coerente con temp_dynamics
-    )
+            + m.Hocc  * (m.O1[pid] + m.O2[pid])
+        )
 
     m.HumDyn = Constraint(m.N, rule=hum_dynamics)
 
@@ -732,6 +810,30 @@ def build_multisp_model(current_state, tree, horizon):
             return Constraint.Skip
         return sum(m.Vent[k] for k in chain) >= len(chain) * m.Vstart[nid]
     m.MinVentOn = Constraint(m.N_dec, rule=min_uptime)
+
+
+    # ── Stage-1 Non-Anticipativity Constraints ────────────────────────────────
+    # All children of root have not yet observed any new information,
+    # so they must share the same here-and-now decision.
+    stage1_nodes = tree[0]['children']
+
+    def heat_nac(m, r, i, j):
+        if i >= j:
+            return Constraint.Skip
+        return m.Heat[r, stage1_nodes[i]] == m.Heat[r, stage1_nodes[j]]
+    m.HeatNAC = Constraint(m.R, 
+                            range(len(stage1_nodes)), 
+                            range(len(stage1_nodes)), 
+                            rule=heat_nac)
+
+    def vent_nac(m, i, j):
+        if i >= j:
+            return Constraint.Skip
+        return m.Vent[stage1_nodes[i]] == m.Vent[stage1_nodes[j]]
+    m.VentNAC = Constraint(range(len(stage1_nodes)), 
+                            range(len(stage1_nodes)), 
+                            rule=vent_nac)
+
  
     # ─────────────────────────────────────────────────────────────────────────
     # OBJECTIVE: E[cost along each leaf path]
@@ -861,23 +963,44 @@ def multi_SP_policy(state):
     vc       = state.get('vent_counter', 0)
     v_status = 1 if vc > 0 else 0
 
-    # ── Generate raw Monte-Carlo scenarios ────────────────────────────────────
+    # # ── Generate raw Monte-Carlo scenarios ────────────────────────────────────
 
-    price_dict, occ_dict, _ = generate_tree_scenarios(
+    # price_dict, occ_dict, _ = generate_tree_scenarios(
+    #     price_now   = state['price_t'],
+    #     price_prev  = state['price_previous'],
+    #     occ_r1_now  = state['Occ1'],
+    #     occ_r2_now  = state['Occ2'],
+    #     branching_factors= BRANCHING_FACTORS,
+    #     rng         = rng,
+    # )
+
+    price_dict, occ_dict, _ = generate_scenarios(
         price_now   = state['price_t'],
         price_prev  = state['price_previous'],
         occ_r1_now  = state['Occ1'],
         occ_r2_now  = state['Occ2'],
-        branching_factors= BRANCHING_FACTORS,
+        horizon= HORIZON_MULTI,
+        n_scenarios = GEN_SCENARIOS,
         rng         = rng,
     )
 
-    # ── Build scenario tree ───────────────────────────────────────────────────
+    #── Build scenario tree ───────────────────────────────────────────────────
     tree = cluster_scenarios_tree2(
         price_dict, occ_dict,
         N_CLUSTERS = N_CLUSTERS,
         horizon             = horizon,
+        rng                 = rng
     )
+
+    # tree = cluster_scenarios_tree(
+    #     price_dict, occ_dict,
+    #     n_branches = N_CLUSTERS,
+    #     horizon             = horizon,
+    #     scenarios_to_generate=  GEN_SCENARIOS
+    # )
+
+    # for nid, node in sorted(tree.items()):
+    #     print(f"node={nid}, t={node['t']}, parent={node['parent']}, children={node['children']}")
 
     # ── Guard: need at least one internal non-root node for decisions ─────────
     internal_nodes = [nid for nid, n in tree.items() if n['children'] and nid != 0]
@@ -898,11 +1021,41 @@ def multi_SP_policy(state):
     # ── Build and solve ───────────────────────────────────────────────────────
     model  = build_multisp_model(state, tree, horizon)
     solver = SolverFactory('gurobi_direct')
-    solver.options['TimeLimit'] = 12
+    solver.options['TimeLimit'] = 15
     solver.options['MIPGap']    = 0.02
     solver.options['Seed']      = 42
     solver.options['Threads']   = 1
     result = solver.solve(model, tee=False)
+
+
+
+    # Debug print - remove after verification
+    # if state['current_time'] == 0:  # only print at t=0 to avoid spam
+    #     print(f"\nTout values (current_time={state['current_time']}):")
+    #     for t in range(horizon):
+    #         print(f"  Tout[{t}] = {value(model.Tout[t]):.3f}")
+    #     print(f"  outdoor_temp raw: {DATA['outdoor_temperature']}")
+
+    #     # ← ADD HERE
+    #     stage1_nodes = tree[0]['children']
+    #     print("Stage-1 decisions:")
+    #     for nid in stage1_nodes:
+    #         p1 = float(value(model.Heat[1, nid]))
+    #         p2 = float(value(model.Heat[2, nid]))
+    #         v  = int(round(float(value(model.Vent[nid]))))
+    #         print(f"  node {nid}: Heat1={p1:.3f}, Heat2={p2:.3f}, Vent={v}")
+
+    # if state['current_time'] == 0:
+    #     stage1_nodes = tree[0]['children']
+    #     print("Stage-1 centroids:")
+    #     for nid in stage1_nodes:
+    #         print(f"  node {nid}: price={tree[nid]['centroid']['price']:.3f}, "
+    #             f"occ1={tree[nid]['centroid']['occ1']:.3f}, "
+    #             f"occ2={tree[nid]['centroid']['occ2']:.3f}")
+
+    # print(f"T1={state['T1']}, T2={state['T2']}")
+    # print(f"Tmin={DATA['temp_min_comfort_threshold']}, Tok={DATA['temp_OK_threshold']}")
+
 
     # ── Guard against infeasible / failed solves ──────────────────────────────
     if result.solver.termination_condition not in (
@@ -919,8 +1072,13 @@ def multi_SP_policy(state):
     # ── Extract here-and-now decision from root ──────────────────────────────
     # True non-anticipativity: decision taken at root (before any scenario unfolds)
     # All scenarios must follow this same decision at node 0
-    decision_node = 0  # Root node
+    # decision_node = 0  # Root node
 
+    # p1 = float(value(model.Heat[1, decision_node]))
+    # p2 = float(value(model.Heat[2, decision_node]))
+    # v  = int(round(float(value(model.Vent[decision_node]))))
+
+    decision_node = tree[0]['children'][0]   # First stage-1 child (all share the same here-and-now decision)
     p1 = float(value(model.Heat[1, decision_node]))
     p2 = float(value(model.Heat[2, decision_node]))
     v  = int(round(float(value(model.Vent[decision_node]))))
@@ -931,7 +1089,6 @@ def multi_SP_policy(state):
     v  = int(np.clip(v,  0,   1))
 
     return {'HeatPowerRoom1': p1, 'HeatPowerRoom2': p2, 'VentilationON': v}
-
 
 # =============================================================================
 # 8. GRADER-COMPATIBLE WRAPPER
