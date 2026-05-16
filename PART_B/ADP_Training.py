@@ -217,13 +217,13 @@ def evaluate_fixed_action(state, action, next_weights):
         H_n = state['H'] - data['humidity_vent_coeff']*action['VentilationON'] + data['humidity_occupancy_coeff']*(state['Occ1']+state['Occ2'])
         vc_n = (state['vent_counter'] + 1) * action['VentilationON']
 
-        # Override Memory Logic         
+        # Override Memory Logic           
         if T1_n < data['temp_min_comfort_threshold']: ov1_n = 1
-        elif T1_n > data['temp_OK_threshold']: ov1_n = 0
+        elif T1_n >= data['temp_OK_threshold']: ov1_n = 0
         else: ov1_n = state['low_override_r1']
 
         if T2_n < data['temp_min_comfort_threshold']: ov2_n = 1
-        elif T2_n > data['temp_OK_threshold']: ov2_n = 0
+        elif T2_n >= data['temp_OK_threshold']: ov2_n = 0
         else: ov2_n = state['low_override_r2']
 
         # MODIFICA: Creazione dello stato futuro simulato per la normalizzazione
