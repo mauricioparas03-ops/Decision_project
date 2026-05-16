@@ -14,10 +14,10 @@ from v2_Checks import check_and_sanitize_action
 
 data_dir = Path(__file__).resolve().parent / "Data"
 
-occ1 = pd.read_csv(data_dir / "OccupancyRoom1.csv", header=None).values.flatten()
-occ2 = pd.read_csv(data_dir / "OccupancyRoom2.csv", header=None).values.flatten()
+occ1 = pd.read_csv(data_dir / "OccupancyRoom1.csv").values.flatten()
+occ2 = pd.read_csv(data_dir / "OccupancyRoom2.csv").values.flatten()
 
-df_prices = pd.read_csv(data_dir / "v2_PriceData.csv", header=None) # skip header, as we will access the columns by index
+df_prices = pd.read_csv(data_dir / "v2_PriceData.csv") # skip header, as we will access the columns by index
 
 # extract the first column (previous price) as a separate array, if needed for the dynamics or the policy.
 daily_previous_prices = df_prices.iloc[:, 0].values 
@@ -64,7 +64,7 @@ for day in range(E_days):
     cost_of_this_day = 0.0
 
     for t in range(T_hours):
-        print(f"Day {day}, Time {t}: Current state: {state}", flush=True)
+        print(f"Day {day}, Time {t}: Temperature: {state['T1']}, {state['T2']}", flush=True)
         # DECISION (Here-and-now)
         # VERIFY FEASIBILITY
         decision = check_and_sanitize_action(select_action, state, power_max)

@@ -12,9 +12,9 @@ from Data.PriceProcessRestaurant import price_model
 from Data.OccupancyProcessRestaurant import next_occupancy_levels
 
 # ── Hyper-parameters ───────────────────────────────────────────────────────────
-HORIZON_MULTI = 6    
+HORIZON_MULTI = 4    
 N_CLUSTERS    = 3 
-BRANCHING_FACTOR = 6
+BRANCHING_FACTOR = 50
 
 # ── System Parameters ─────────────────────────────────
 DATA = get_fixed_data()
@@ -41,25 +41,33 @@ def build_scenario_tree(state, L, S, K):
         for node in tree[tau - 1]:
             # --- Generate S samples of next state ---
             samples = []
-            probabilities = []
             for _ in range(S):
                 price_next = price_model(node['price'], node['price_prev'])
                 occ1_next, occ2_next = next_occupancy_levels(node['occupancy1'], node['occupancy2'])
-                probability = node['probability'] / S 
                 samples.append([price_next, occ1_next, occ2_next])
-                probabilities.append(probability)
 
             # --- Cluster samples into K clusters ---
-            scaler = StandardScaler()
-            samples_scaled = scaler.fit_transform(samples)
-            kmeans = KMeans(n_clusters=K, random_state=0, n_init = 10).fit(samples_scaled)
-            centers = scaler.inverse_transform(kmeans.cluster_centers_)
+            X = np.asarray(samples)
+            n_samples = X.shape[0]
+            K_eff = min(K, n_samples)
+
+            if K_eff <= 0:
+                # no samples generated, skip
+                continue
+
+            if K_eff == 1:
+                # single cluster: centroid is the mean, all labels 0
+                labels = np.zeros(n_samples, dtype=int)
+                centers = X.mean(axis=0, keepdims=True)
+            else:
+                kmeans = KMeans(n_clusters=K_eff, random_state=0, n_init=10).fit(X)
+                labels = kmeans.labels_
+                centers = kmeans.cluster_centers_
 
             # --- Create new nodes for each cluster center ---
-            for k in range(K):
+            for k in range(K_eff):
                 # Conditional probability: p(cluster k | parent)
-                cluster_count = sum(1 for i in range(S) if kmeans.labels_[i] == k)
-                conditional_prob = cluster_count / S
+                conditional_prob = np.sum(labels == k) / n_samples
                 
                 # Joint probability: p(path to this node)
                 joint_prob = node['probability'] * conditional_prob
@@ -386,7 +394,7 @@ def multiSP_policy(state):
     t         = state['current_time']
     remaining = DATA['num_timeslots'] - t
     horizon   = min(HORIZON_MULTI, remaining)
-    tree = build_scenario_tree(state, horizon, S=5, K=2)
+    tree = build_scenario_tree(state, horizon, S=BRANCHING_FACTOR, K=N_CLUSTERS)
     model = build_multisp_model(state, tree, horizon)
     solver = SolverFactory('gurobi')
     result = solver.solve(model, tee=False)
