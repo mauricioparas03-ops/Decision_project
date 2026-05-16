@@ -1,6 +1,6 @@
 import numpy as np
 from pyomo.environ import *
-from sklearn.linear_model import Ridge  # MODIFICA: Importata Ridge al posto di LinearRegression
+from sklearn.linear_model import Ridge  
 import matplotlib
 matplotlib.use('Agg')
 
@@ -88,8 +88,10 @@ def solve_bellman_equation_milp(state, next_t_weights):
 
     #wait and see dynamics
     m.Scen = RangeSet(0, K_SCENARIOS - 1)
-    m.T1_next = Var(m.Scen); m.T2_next = Var(m.Scen); m.H_next = Var(m.Scen)
-    m.ov1_next = Var(m.Scen, domain=Binary); m.ov2_next = Var(m.Scen, domain=Binary)
+    m.T1_next = Var(m.Scen); m.T2_next = Var(m.Scen)
+    m.H_next = Var(m.Scen)
+    m.ov1_next = Var(m.Scen, domain=Binary)
+    m.ov2_next = Var(m.Scen, domain=Binary)
     m.vc_next = Var(domain=NonNegativeReals)
 
     #counter update
@@ -136,13 +138,13 @@ def solve_bellman_equation_milp(state, next_t_weights):
     
     m.c_ylow_r1_a = Constraint(m.Scen, rule=lambda m, k: m.T1_next[k] <= data['temp_min_comfort_threshold'] + eps + M*(1 - m.y_low_r1[k]))
     m.c_ylow_r1_b = Constraint(m.Scen, rule=lambda m, k: m.T1_next[k] >= data['temp_min_comfort_threshold'] + eps - M*m.y_low_r1[k])
-    m.c_yok_r1_a  = Constraint(m.Scen, rule=lambda m, k: m.T1_next[k] >= data['temp_OK_threshold'] - M*(1 - m.y_ok_r1[k]))
-    m.c_yok_r1_b  = Constraint(m.Scen, rule=lambda m, k: m.T1_next[k] <= data['temp_OK_threshold'] + M*m.y_ok_r1[k])
+    m.c_yok_r1_a = Constraint(m.Scen, rule=lambda m, k: m.T1_next[k] >= data['temp_OK_threshold'] - M*(1 - m.y_ok_r1[k]))
+    m.c_yok_r1_b = Constraint(m.Scen, rule=lambda m, k: m.T1_next[k] <= data['temp_OK_threshold'] + M*m.y_ok_r1[k])
 
-    m.c_u_r1_a = Constraint(m.Scen, rule=lambda m, k: m.ov1_next[k] >= m.y_low_r1[k])
-    m.c_u_r1_b = Constraint(m.Scen, rule=lambda m, k: m.ov1_next[k] <= u_prev_r1 + m.y_low_r1[k])
-    m.c_u_r1_c = Constraint(m.Scen, rule=lambda m, k: m.ov1_next[k] >= u_prev_r1 - m.y_ok_r1[k])
-    m.c_u_r1_d = Constraint(m.Scen, rule=lambda m, k: m.ov1_next[k] <= 1 - m.y_ok_r1[k])
+    m.c_force_override_ON_if_cold_r1 = Constraint(m.Scen, rule=lambda m, k: m.ov1_next[k] >= m.y_low_r1[k])
+    m.c_prevent_override_without_cold_r1 = Constraint(m.Scen, rule=lambda m, k: m.ov1_next[k] <= u_prev_r1 + m.y_low_r1[k])
+    m.c_keep_override_ON_until_ok_r1 = Constraint(m.Scen, rule=lambda m, k: m.ov1_next[k] >= u_prev_r1 - m.y_ok_r1[k])
+    m.c_force_override_OFF_if_ok_r1 = Constraint(m.Scen, rule=lambda m, k: m.ov1_next[k] <= 1 - m.y_ok_r1[k])
 
     # =========================================================
     # 4. LOGICA OVERRULE STANZA 2
@@ -154,11 +156,11 @@ def solve_bellman_equation_milp(state, next_t_weights):
     m.c_yok_r2_a  = Constraint(m.Scen, rule=lambda m, k: m.T2_next[k] >= data['temp_OK_threshold'] - M*(1 - m.y_ok_r2[k]))
     m.c_yok_r2_b  = Constraint(m.Scen, rule=lambda m, k: m.T2_next[k] <= data['temp_OK_threshold'] + M*m.y_ok_r2[k])
 
-    m.c_u_r2_a = Constraint(m.Scen, rule=lambda m, k: m.ov2_next[k] >= m.y_low_r2[k])
-    m.c_u_r2_b = Constraint(m.Scen, rule=lambda m, k: m.ov2_next[k] <= u_prev_r2 + m.y_low_r2[k])
-    m.c_u_r2_c = Constraint(m.Scen, rule=lambda m, k: m.ov2_next[k] >= u_prev_r2 - m.y_ok_r2[k])
-    m.c_u_r2_d = Constraint(m.Scen, rule=lambda m, k: m.ov2_next[k] <= 1 - m.y_ok_r2[k])
-    
+    m.c_force_override_ON_if_cold_r2 = Constraint(m.Scen, rule=lambda m, k: m.ov2_next[k] >= m.y_low_r2[k])
+    m.c_prevent_override_without_cold_r2 = Constraint(m.Scen, rule=lambda m, k: m.ov2_next[k] <= u_prev_r2 + m.y_low_r2[k])
+    m.c_keep_override_ON_until_ok_r2 = Constraint(m.Scen, rule=lambda m, k: m.ov2_next[k] >= u_prev_r2 - m.y_ok_r2[k])
+    m.c_force_override_OFF_if_ok_r2 = Constraint(m.Scen, rule=lambda m, k: m.ov2_next[k] <= 1 - m.y_ok_r2[k])
+
     if next_t_weights:
         # Calcoliamo il costo atteso sommando tutti gli scenari k in m.Scen
         expected_future_cost += sum(
@@ -260,17 +262,17 @@ for i in range(ITERATIONS_I):
     current_states = []
     for n in range(N_SAMPLES):
         state_n = get_fixed_data().copy()
-        state_n['T1']             = np.random.uniform(18.0, 26.0)
-        state_n['T2']             = np.random.uniform(18.0, 26.0)
-        state_n['H']              = np.random.uniform(20.0, 70.0)
-        state_n['Occ1']           = np.random.uniform(25.0, 35.0)
-        state_n['Occ2']           = np.random.uniform(15.0, 25.0)
-        state_n['price_t']        = np.random.uniform(0.0, 12.0)
+        state_n['T1'] = np.random.uniform(18.0, 26.0)
+        state_n['T2'] = np.random.uniform(18.0, 26.0)
+        state_n['H'] = np.random.uniform(20.0, 70.0)
+        state_n['Occ1'] = np.random.uniform(25.0, 35.0)
+        state_n['Occ2'] = np.random.uniform(15.0, 25.0)
+        state_n['price_t'] = np.random.uniform(0.0, 12.0)
         state_n['price_previous'] = np.random.uniform(0.0, 12.0)
         state_n['current_time']   = 0
         current_states.append(state_n)
 
-    # Forward pass: evoluzione normale
+    # Forward pass
     for t in range(T_HOURS):
         next_t_weights = vfa_weights[t + 1] if t < T_HOURS - 1 else None
         for n in range(N_SAMPLES):
