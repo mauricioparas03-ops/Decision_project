@@ -70,9 +70,17 @@ def get_normalized_features(state):
 def solve_bellman_equation_milp(state, next_t_weights):
     
     m = ConcreteModel()
+   
     m.p1 = Var(bounds=(0, data['heating_max_power']))
     m.p2 = Var(bounds=(0, data['heating_max_power']))
     m.v = Var(domain=Binary)
+    
+        # Overrule stato corrente (vincola l'azione here-and-now)
+    if state['T1'] > data['temp_max_comfort_threshold']: m.p1.fix(0)
+    elif state['T1'] < data['temp_min_comfort_threshold'] or state['low_override_r1'] == 1: m.p1.fix(data['heating_max_power'])
+    if state['T2'] > data['temp_max_comfort_threshold']: m.p2.fix(0)
+    elif state['T2'] < data['temp_min_comfort_threshold'] or state['low_override_r2'] == 1: m.p2.fix(data['heating_max_power'])
+    if state['H'] > data['humidity_threshold'] or state['vent_counter'] in [1, 2]: m.v.fix(1)
 
     if state['T1'] > data['temp_max_comfort_threshold']: m.p1.fix(0)
     elif state['T1'] < data['temp_min_comfort_threshold'] or state['low_override_r1'] == 1: m.p1.fix(data['heating_max_power'])
@@ -131,6 +139,7 @@ def solve_bellman_equation_milp(state, next_t_weights):
         m.H_next[k] == state['H'] - data['humidity_vent_coeff']*m.v + 
                        data['humidity_occupancy_coeff']*(state['Occ1']+state['Occ2']))
 
+    
     # =========================================================
     # 3. LOGICA OVERRULE STANZA 1
     # =========================================================
@@ -160,6 +169,13 @@ def solve_bellman_equation_milp(state, next_t_weights):
     m.c_prevent_override_without_cold_r2 = Constraint(m.Scen, rule=lambda m, k: m.ov2_next[k] <= u_prev_r2 + m.y_low_r2[k])
     m.c_keep_override_ON_until_ok_r2 = Constraint(m.Scen, rule=lambda m, k: m.ov2_next[k] >= u_prev_r2 - m.y_ok_r2[k])
     m.c_force_override_OFF_if_ok_r2 = Constraint(m.Scen, rule=lambda m, k: m.ov2_next[k] <= 1 - m.y_ok_r2[k])
+
+        
+    #humidity triggered ventilation
+    m.humidity_trigger = Constraint(m.Scen, rule=lambda m, k: m.H_next[k] <= data['humidity_threshold'] + M*m.v)
+
+    # Ventilation counter evolution (non-negative real representing future vent counter)
+    m.c_vc = Constraint(expr=m.vc_next == (state['vent_counter'] + 1) * m.v)
 
     if next_t_weights:
         # Calcoliamo il costo atteso sommando tutti gli scenari k in m.Scen
