@@ -146,7 +146,7 @@ def build_multisp_model(state, tree, horizon):
         T_r = state[f'T{r}']
         if T_r > DATA['temp_max_comfort_threshold']:
             low_override[r] = 0 
-
+    eps = 0.0001
     # ── Node sets ─────────────────────────────────────────────────────────────
     # Root è sempre il primo nodo del primo stage
     root_id = tree[0][0]['id']
@@ -179,7 +179,6 @@ def build_multisp_model(state, tree, horizon):
     m.R      = Set(initialize=[1, 2])
     m.N = Set(initialize=non_root_ids)
     m.RN = Set(initialize = m.R* m.N)
-    m.LeafNodes = Set(initialize=leaf_ids)
 
     
     m.Pr     = Param(initialize=d['heating_max_power'])
@@ -204,18 +203,22 @@ def build_multisp_model(state, tree, horizon):
     price_by_node = {nid: node["price"] for nid, node in nodes_map.items()}
     occ1_by_node = {nid: node["occupancy1"] for nid, node in nodes_map.items()}
     occ2_by_node = {nid: node["occupancy2"] for nid, node in nodes_map.items()}
-    path_prob_leaf = {nid: node["probability"] for nid, node in nodes_map.items() if not node["children"]}
-        
+ 
     m.prices = Param(m.N, initialize=price_by_node)
     m.O1     = Param(m.N, initialize=occ1_by_node)
     m.O2     = Param(m.N, initialize=occ2_by_node)
-    m.pi     = Param(m.LeafNodes, initialize=path_prob_leaf)
 
     # ── Decision variables (decision nodes: all non-root nodes) ──────────────────
     # root
     m.Heat0 = Var(m.R, domain=NonNegativeReals, bounds=(0, d['heating_max_power']))
     m.Vent0 = Var(domain=Binary)
     m.Vstart0 = Var(domain=Binary)
+    m.y_low0  = Var(m.R, domain=Binary)  
+    m.y_ok0   = Var(m.R, domain=Binary)  
+    m.y_high0 = Var(m.R, domain=Binary)   
+    m.u0      = Var(m.R, domain=Binary) 
+    m.T_in0 = Var(m.R, domain=NonNegativeReals)
+    m.Hum0  = Var(domain=NonNegativeReals)
     # internal stages
     m.Heat  = Var(m.RN, domain=NonNegativeReals, bounds=(0, d['heating_max_power']))
     m.Vent  = Var(m.N,  domain=Binary)
@@ -234,30 +237,59 @@ def build_multisp_model(state, tree, horizon):
         for node in stage_nodes:
             node_stage[node['id']] = stage_idx
 
-    #constraint for root node
-    remaining_uptime = DATA['vent_min_up_time'] - vent_counter
-    if vent_counter > 0 and remaining_uptime > 0:
-        m.Vent0.fix(1)
-   
-    if vent_counter > 0 and remaining_uptime > 0:
-        for stage_idx in range(1, min(remaining_uptime, horizon)):
-            for node in tree[stage_idx]:
-                m.Vent[node['id']].fix(1)
+    #constraints for root node
+    m.c_real = Constraint(expr=m.T_in0[1]== T_init[1])
+    m.c_real2 = Constraint(expr=m.T_in0[2]== T_init[2])
+    m.c_hum = Constraint(expr=m.Hum0 == H_init)
 
-    for r in [1, 2]:
-        temp_now = state["T1"] if r == 1 else state["T2"]
-        if low_override[r]: 
-            m.Heat0[r].fix(m.Pr) 
-        if temp_now >= m.Thigh: 
-            m.Heat0[r].fix(0)
+    m.c_0thigh1 = Constraint(m.R, rule=lambda m,r: m.T_in0[r] >= m.Thigh - m.M_temp*(1 - m.y_high0[r]))
+    m.c_0thigh2 = Constraint(m.R, rule=lambda m,r: m.T_in0[r] <= m.Thigh + m.M_temp*m.y_high0[r])
+    m.c_0heat_off = Constraint(m.R, rule=lambda m,r: m.Heat0[r] <= m.Pr*(1 - m.y_high0[r]))
 
-    if state['H'] > m.Hhigh:
-        m.Vent0.fix(1)
+    m.c_0tlow1 = Constraint(m.R, rule=lambda m,r: m.T_in0[r] <= m.Tmin + m.M_temp*(1 - m.y_low0[r]))
+    m.c_0tlow2 = Constraint(m.R, rule=lambda m,r: m.T_in0[r] >= m.Tmin + eps - m.M_temp*m.y_low0[r])
+
+    m.c_0tok1 = Constraint(m.R, rule=lambda m,r: m.T_in0[r] >= m.Tok - m.M_temp*(1 - m.y_ok0[r]))
+    m.c_0tok2 = Constraint(m.R, rule=lambda m,r: m.T_in0[r] <= m.Tok + m.M_temp*m.y_ok0[r])
+
+
+    m.c_0u1 = Constraint(m.R, rule=lambda m,r: m.u0[r] >= m.y_low0[r])
+        # Overrule Memory (u variable)
+    def u_memory_rule0(m, r):
+        return m.u0[r] <= low_override[r] + m.y_low0[r]
+    
+    m.c_0u2 = Constraint(m.R, rule=u_memory_rule0)
+    m.c_0u3 = Constraint(m.R, rule=lambda m,r: m.Heat0[r] >= m.Pr * m.u0[r])
+    def u_memory_rule02(m, r):
+        return m.u0[r] >= low_override[r] - m.y_ok0[r]
+    m.c_0u4 = Constraint(m.R, rule=u_memory_rule02)
+    m.c_0u5 = Constraint(m.R, rule=lambda m,r: m.u0[r] <= 1 - m.y_ok0[r])
 
     m.min_uptime_root = Constraint(expr=m.Vstart0 >= m.Vent0 - v_prev)
     m.min_uptime_root_2 = Constraint(expr=m.Vstart0 <= m.Vent0)
     m.min_uptime_root_3 = Constraint(expr=m.Vstart0 <= 1 - v_prev)
-    
+        # Root minimum-up chains: ensure Vstart0 enforces minimum up-time starting at root
+    root_uptime_depth = min(value(m.U_vent), horizon)
+    m.RootChains = []
+    if root_uptime_depth == 1:
+        m.RootChains = [[root_id]]
+    elif len(tree) > 1:
+        for child in tree[1]:
+            child_chains = get_descendant_chains(child['id'], root_uptime_depth - 1, nodes_map)
+            for chain in child_chains:
+                m.RootChains.append([root_id] + chain)
+
+    if m.RootChains:
+        m.RootChainSet = Set(initialize=list(range(len(m.RootChains))))
+
+        def min_uptime_root_rule(m, chain_idx):
+            chain = m.RootChains[chain_idx]
+            return m.Vent0 + sum(m.Vent[k] for k in chain[1:]) >= len(chain) * m.Vstart0
+
+        m.MinVentOnRoot = Constraint(m.RootChainSet, rule=min_uptime_root_rule)
+
+    # Humidity threshold forces ventilation
+    m.c_hum_limit0 = Constraint(rule=lambda m: m.Hum0 <= m.Hhigh + m.M_hum * m.Vent0)
 
     # Dynamics: Child node state = f(Parent state, Parent decision)
     def thermal_dynamics_rule(m, r, n):
@@ -317,7 +349,7 @@ def build_multisp_model(state, tree, horizon):
     m.c_heat_off = Constraint(m.RN, rule=lambda m,r,n: m.Heat[r,n] <= m.Pr*(1 - m.y_high[r,n]))
 
     m.c_tlow1 = Constraint(m.RN, rule=lambda m,r,n: m.T_in[r,n] <= m.Tmin + m.M_temp*(1 - m.y_low[r,n]))
-    m.c_tlow2 = Constraint(m.RN, rule=lambda m,r,n: m.T_in[r,n] >= m.Tmin - m.M_temp*m.y_low[r,n])
+    m.c_tlow2 = Constraint(m.RN, rule=lambda m,r,n: m.T_in[r,n] >= m.Tmin + eps - m.M_temp*m.y_low[r,n])
 
     m.c_tok1 = Constraint(m.RN, rule=lambda m,r,n: m.T_in[r,n] >= m.Tok - m.M_temp*(1 - m.y_ok[r,n]))
     m.c_tok2 = Constraint(m.RN, rule=lambda m,r,n: m.T_in[r,n] <= m.Tok + m.M_temp*m.y_ok[r,n])
@@ -327,7 +359,7 @@ def build_multisp_model(state, tree, horizon):
         tau_n = node_stage[n] 
         if tau_n == 1:
             # Logic for root depends on the passed state 'low_override'
-            return m.u[r, n] <= low_override[r] + m.y_low[r, n]
+            return m.u[r, n] <= m.u0[r] + m.y_low[r, n]
         p_id = nodes_map[n]['parent_id']
         return m.u[r, n] <= m.u[r, p_id] + m.y_low[r, n]
     
@@ -337,7 +369,7 @@ def build_multisp_model(state, tree, horizon):
     def u_memory_rule2(m, r, n):
         tau_n = node_stage[n] 
         if tau_n == 1:
-            return m.u[r, n] >= low_override[r] - m.y_ok[r, n]
+            return m.u[r, n] >= m.u0[r] - m.y_ok[r, n]
         p_id = nodes_map[n]['parent_id']
         return m.u[r, n] >= m.u[r, p_id] - m.y_ok[r, n]
     m.c_u4 = Constraint(m.RN, rule=u_memory_rule2)
@@ -347,7 +379,7 @@ def build_multisp_model(state, tree, horizon):
     def vent_start_rule(m, n):
         tau_n = node_stage[n] 
         if tau_n == 1:
-            return m.Vstart[n] >= m.Vent[n] - v_prev
+            return m.Vstart[n] >= m.Vent[n] - m.Vent0
         p_id = nodes_map[n]['parent_id']
         return m.Vstart[n] >= m.Vent[n] - m.Vent[p_id]
     m.c_vstart = Constraint(m.N, rule=vent_start_rule)
@@ -361,7 +393,7 @@ def build_multisp_model(state, tree, horizon):
     def vent_start_rule_3(m, n):
         tau_n = node_stage[n]
         if tau_n == 1:
-            return m.Vstart[n] <= 1 - v_prev
+            return m.Vstart[n] <= 1 - m.Vent0
         p_id = nodes_map[n]['parent_id']
         return m.Vstart[n] <= 1 - m.Vent[p_id]
     m.c_vstart3 = Constraint(m.N, rule=vent_start_rule_3)
