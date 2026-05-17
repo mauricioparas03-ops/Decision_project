@@ -1,7 +1,6 @@
 import numpy as np
 import warnings
 from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
 from pyomo.environ import (
     ConcreteModel, Set, Param, Var, Objective, Constraint,
     SolverFactory, NonNegativeReals, minimize, Binary, value,
@@ -40,14 +39,18 @@ def build_scenario_tree(state, L, S, K):
         new_nodes = []
         for node in tree[tau - 1]:
             # --- Generate S samples of next state ---
-            samples = []
+            samples_prices= []
+            sample_occ1 = []
+            sample_occ2 = []
             for _ in range(S):
                 price_next = price_model(node['price'], node['price_prev'])
                 occ1_next, occ2_next = next_occupancy_levels(node['occupancy1'], node['occupancy2'])
-                samples.append([price_next, occ1_next, occ2_next])
+                samples_prices.append(price_next)
+                sample_occ1.append(occ1_next)
+                sample_occ2.append(occ2_next)
 
-            # --- Cluster samples into K clusters ---
-            X = np.asarray(samples)
+            # --- Cluster samples into K clusters (NO SCALING - align with MultiSP) ---
+            X = np.column_stack([samples_prices, sample_occ1, sample_occ2])  # shape (n_samples, 3) — DO NOT use column_stack, it transposes!
             n_samples = X.shape[0]
             K_eff = min(K, n_samples)
 
@@ -196,7 +199,8 @@ def build_multisp_model(state, tree, horizon):
     m.M_hum  = Param(initialize=100.0)
     m.U_vent = Param(initialize=d['vent_min_up_time'])
     m.Tout   = Param(range(state["current_time"], state["current_time"] + horizon),
-                     initialize={t: d['outdoor_temperature'][t] for t in range(state["current_time"], state["current_time"] + horizon)})        
+                     initialize={t: d['outdoor_temperature'][min(t, len(d['outdoor_temperature']) - 1)] 
+                                for t in range(state["current_time"], state["current_time"] + horizon)})
     price_by_node = {nid: node["price"] for nid, node in nodes_map.items()}
     occ1_by_node = {nid: node["occupancy1"] for nid, node in nodes_map.items()}
     occ2_by_node = {nid: node["occupancy2"] for nid, node in nodes_map.items()}

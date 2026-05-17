@@ -1,10 +1,10 @@
 from EnvFunctions import apply_dynamics, check_feasibility
 from policies.dummy_policy import select_action as dummy_action
 #Import your policy here:
-#from policies.dummy_policy import select_action
+#  rom policies.dummy_policy import select_action
 # from policies.lookahead_policy import select_action
-#from policies.SP_policy import select_action
-from policies.multiSP import select_action
+# from policies.SP_policy import select_action
+from MultiSP import select_action
 # from policies.ADP_policy import select_action
 
 from Data.v2_SystemCharacteristics import get_fixed_data
@@ -63,9 +63,12 @@ for day in range(E_days):
 
 
     cost_of_this_day = 0.0
+    fallback_count = 0
 
     for t in range(T_hours):
         print(f"Day {day}, Time {t}: Temperature: {state['T1']}, {state['T2']}", flush=True)
+        if t == 0:
+            print(f"  → Price: {state['price_t']:.3f}, Occ1: {state['Occ1']:.2f}, Occ2: {state['Occ2']:.2f}", flush=True)
         # DECISION (Here-and-now)
         # VERIFY FEASIBILITY
         decision = check_and_sanitize_action(select_action, state, power_max)
@@ -73,12 +76,15 @@ for day in range(E_days):
         if not is_feasible:
             print(f"Day {day}, Time {t}: Infeasible! Using dummy.")
             decision = dummy_action(state)
+            fallback_count += 1
 
         # COST AND DYNAMICS
         # cost after overrules; pass the day's exogenous arrays so the
         # environment values from the CSV are used for the "real" next state
         state, real_cost = apply_dynamics(state, decision, data)
         cost_of_this_day += real_cost
+        if t == 0 or t == 9:
+            print(f"  → real_cost this step: {real_cost:.3f}, cumulative: {cost_of_this_day:.3f}", flush=True)
 
         # --- per-timestep logging ---
         vent_was_on = int(state['vent_counter'] > 0)
@@ -110,6 +116,7 @@ for day in range(E_days):
     daily_costs[day] = cost_of_this_day
     daily_pw_cost[day] = (cost_of_this_day / daily_energy_kwh[day]
                           if daily_energy_kwh[day] > 0 else 0.0)
+    print(f"Day {day}: Total cost = {cost_of_this_day:.2f}, Fallback count = {fallback_count}/10", flush=True)
 
     if (day + 1) % 10 == 0:
         print(f"Completed day {day + 1}/{E_days}", flush=True)
