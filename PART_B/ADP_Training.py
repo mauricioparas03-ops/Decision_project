@@ -70,23 +70,27 @@ def get_normalized_features(state):
 def solve_bellman_equation_milp(state, next_t_weights):
     
     m = ConcreteModel()
-   
     m.p1 = Var(bounds=(0, data['heating_max_power']))
     m.p2 = Var(bounds=(0, data['heating_max_power']))
     m.v = Var(domain=Binary)
     
-    # Overrule stato corrente (vincola l'azione here-and-now)
-    if state['T1'] > data['temp_max_comfort_threshold']: m.p1.fix(0)
-    elif state['T1'] < data['temp_min_comfort_threshold'] or state['low_override_r1'] == 1: m.p1.fix(data['heating_max_power'])
-    if state['T2'] > data['temp_max_comfort_threshold']: m.p2.fix(0)
-    elif state['T2'] < data['temp_min_comfort_threshold'] or state['low_override_r2'] == 1: m.p2.fix(data['heating_max_power'])
-    if state['H'] > data['humidity_threshold'] or state['vent_counter'] in [1, 2]: m.v.fix(1)
+    # Overrule stato corrente
+    if state['T1'] > data['temp_max_comfort_threshold']:
+        m.p1.fix(0)
+    elif state['low_override_r1'] == 1 and state['T1'] < data['temp_OK_threshold']:
+        m.p1.fix(data['heating_max_power'])
+    elif state['T1'] < data['temp_min_comfort_threshold']:
+        m.p1.fix(data['heating_max_power'])
 
-    if state['T1'] > data['temp_max_comfort_threshold']: m.p1.fix(0)
-    elif state['T1'] < data['temp_min_comfort_threshold'] or state['low_override_r1'] == 1: m.p1.fix(data['heating_max_power'])
-    if state['T2'] > data['temp_max_comfort_threshold']: m.p2.fix(0)
-    elif state['T2'] < data['temp_min_comfort_threshold'] or state['low_override_r2'] == 1: m.p2.fix(data['heating_max_power'])
-    if state['H'] > data['humidity_threshold'] or state['vent_counter'] in [1, 2]: m.v.fix(1)
+    if state['T2'] > data['temp_max_comfort_threshold']:
+        m.p2.fix(0)
+    elif state['low_override_r2'] == 1 and state['T2'] < data['temp_OK_threshold']:
+        m.p2.fix(data['heating_max_power'])
+    elif state['T2'] < data['temp_min_comfort_threshold']:
+        m.p2.fix(data['heating_max_power'])
+
+    if state['H'] > data['humidity_threshold'] or state['vent_counter'] in [1, 2]:
+        m.v.fix(1)
 
     scen_data = []
     for _ in range(K_SCENARIOS):
@@ -94,106 +98,85 @@ def solve_bellman_equation_milp(state, next_t_weights):
         sc_o1, sc_o2 = next_occupancy_levels(state['Occ1'], state['Occ2'])
         scen_data.append({'price_t': sc_p, 'Occ1': sc_o1, 'Occ2': sc_o2})
 
-    # =========================================================
-    # 1. DICHIARAZIONE VARIABILI (SENZA INDICIZZAZIONE SCENARI)
-    # =========================================================
     m.T1_next = Var()
     m.T2_next = Var()
     m.H_next = Var()
-    m.ov1_next = Var(domain=Binary) 
+    m.ov1_next = Var(domain=Binary)
     m.ov2_next = Var(domain=Binary)
     m.vc_next = Var(domain=NonNegativeReals)
-
-    m.y_low_r1 = Var(domain=Binary); m.y_ok_r1  = Var(domain=Binary)
-    m.y_low_r2 = Var(domain=Binary); m.y_ok_r2  = Var(domain=Binary)
+    m.y_low_r1 = Var(domain=Binary); m.y_ok_r1 = Var(domain=Binary)
+    m.y_low_r2 = Var(domain=Binary); m.y_ok_r2 = Var(domain=Binary)
 
     immediate_cost = state['price_t'] * (m.p1 + m.p2 + m.v * data['ventilation_power'])
     expected_future_cost = 0
     tout = data['outdoor_temperature'][int(state['current_time'])]
     M = 500
-    
-    # =========================================================
-    # 2. VINCOLI DI DINAMICA FISICA (Definiti UNA SOLA VOLTA)
-    # =========================================================
-    m.ct1 = Constraint(expr= 
-        m.T1_next == state['T1'] + data['heat_exchange_coeff']*(state['T2']-state['T1']) + 
-                        data['thermal_loss_coeff']*(tout-state['T1']) + 
-                        data['heating_efficiency_coeff']*m.p1 - 
-                        data['heat_vent_coeff']*m.v + 
-                        data['heat_occupancy_coeff']*state['Occ1'])
 
-    m.ct2 = Constraint(expr= 
-        m.T2_next == state['T2'] + data['heat_exchange_coeff']*(state['T1']-state['T2']) + 
-                        data['thermal_loss_coeff']*(tout-state['T2']) + 
-                        data['heating_efficiency_coeff']*m.p2 - 
-                        data['heat_vent_coeff']*m.v + 
-                        data['heat_occupancy_coeff']*state['Occ2'])
+    # Dinamica fisica
+    m.ct1 = Constraint(expr=
+        m.T1_next == state['T1'] + data['heat_exchange_coeff']*(state['T2']-state['T1']) +
+                     data['thermal_loss_coeff']*(tout-state['T1']) +
+                     data['heating_efficiency_coeff']*m.p1 -
+                     data['heat_vent_coeff']*m.v +
+                     data['heat_occupancy_coeff']*state['Occ1'])
 
-    m.ch = Constraint(expr= 
-        m.H_next == state['H'] - data['humidity_vent_coeff']*m.v + 
-                       data['humidity_occupancy_coeff']*(state['Occ1']+state['Occ2']))
+    m.ct2 = Constraint(expr=
+        m.T2_next == state['T2'] + data['heat_exchange_coeff']*(state['T1']-state['T2']) +
+                     data['thermal_loss_coeff']*(tout-state['T2']) +
+                     data['heating_efficiency_coeff']*m.p2 -
+                     data['heat_vent_coeff']*m.v +
+                     data['heat_occupancy_coeff']*state['Occ2'])
 
-    # =========================================================
-    # 3. LOGICA OVERRULE STANZA 1
-    # =========================================================
-    u_prev_r1 = state['low_override_r1']
-    
-    m.c_ylow_r1_a = Constraint(expr= m.T1_next <= data['temp_min_comfort_threshold'] + M*(1 - m.y_low_r1))
-    m.c_ylow_r1_b = Constraint(expr= m.T1_next >= data['temp_min_comfort_threshold'] - M*m.y_low_r1)
-    m.c_yok_r1_a = Constraint(expr= m.T1_next >= data['temp_OK_threshold'] - M*(1 - m.y_ok_r1))
-    m.c_yok_r1_b = Constraint(expr= m.T1_next <= data['temp_OK_threshold'] + M*m.y_ok_r1)
+    m.ch = Constraint(expr=
+        m.H_next == state['H'] - data['humidity_vent_coeff']*m.v +
+                    data['humidity_occupancy_coeff']*(state['Occ1']+state['Occ2']))
 
-    m.c_force_override_ON_if_cold_r1 = Constraint(expr= m.ov1_next >= m.y_low_r1)
-    m.c_prevent_override_without_cold_r1 = Constraint(expr= m.ov1_next <= u_prev_r1 + m.y_low_r1)
-    m.c_keep_override_ON_until_ok_r1 = Constraint(expr= m.ov1_next >= u_prev_r1 - m.y_ok_r1)
-    m.c_force_override_OFF_if_ok_r1 = Constraint(expr= m.ov1_next <= 1 - m.y_ok_r1)
-
-    # =========================================================
-    # 4. LOGICA OVERRULE STANZA 2
-    # =========================================================
-    u_prev_r2 = state['low_override_r2']
-    
-    m.c_ylow_r2_a = Constraint(expr= m.T2_next <= data['temp_min_comfort_threshold'] + M*(1 - m.y_low_r2))
-    m.c_ylow_r2_b = Constraint(expr= m.T2_next >= data['temp_min_comfort_threshold'] - M*m.y_low_r2)
-    m.c_yok_r2_a  = Constraint(expr= m.T2_next >= data['temp_OK_threshold'] - M*(1 - m.y_ok_r2))
-    m.c_yok_r2_b  = Constraint(expr= m.T2_next <= data['temp_OK_threshold'] + M*m.y_ok_r2)
-
-    m.c_force_override_ON_if_cold_r2 = Constraint(expr= m.ov2_next >= m.y_low_r2)
-    m.c_prevent_override_without_cold_r2 = Constraint(expr= m.ov2_next <= u_prev_r2 + m.y_low_r2)
-    m.c_keep_override_ON_until_ok_r2 = Constraint(expr= m.ov2_next >= u_prev_r2 - m.y_ok_r2)
-    m.c_force_override_OFF_if_ok_r2 = Constraint(expr= m.ov2_next <= 1 - m.y_ok_r2)
-
-    # humidity triggered ventilation
-    m.humidity_trigger = Constraint(expr= m.H_next <= data['humidity_threshold'] + M*m.v)
-
-    # Ventilation counter evolution
     m.c_vc = Constraint(expr=m.vc_next == (state['vent_counter'] + 1) * m.v)
 
-    # =========================================================
-    # 5. CALCOLO VALORE FUTURO ATTESO (Itera sugli scenari)
-    # =========================================================
+    # Overrule logica next state Room 1
+    u_prev_r1 = state['low_override_r1']
+    m.c_ylow_r1_a = Constraint(expr=m.T1_next <= data['temp_min_comfort_threshold'] + M*(1 - m.y_low_r1))
+    m.c_ylow_r1_b = Constraint(expr=m.T1_next >= data['temp_min_comfort_threshold'] - M*m.y_low_r1)
+    m.c_yok_r1_a  = Constraint(expr=m.T1_next >= data['temp_OK_threshold'] - M*(1 - m.y_ok_r1))
+    m.c_yok_r1_b  = Constraint(expr=m.T1_next <= data['temp_OK_threshold'] + M*m.y_ok_r1)
+    m.c_ov1_a = Constraint(expr=m.ov1_next >= m.y_low_r1)
+    m.c_ov1_b = Constraint(expr=m.ov1_next <= u_prev_r1 + m.y_low_r1)
+    m.c_ov1_c = Constraint(expr=m.ov1_next >= u_prev_r1 - m.y_ok_r1)
+    m.c_ov1_d = Constraint(expr=m.ov1_next <= 1 - m.y_ok_r1)
+
+    # Overrule logica next state Room 2
+    u_prev_r2 = state['low_override_r2']
+    m.c_ylow_r2_a = Constraint(expr=m.T2_next <= data['temp_min_comfort_threshold'] + M*(1 - m.y_low_r2))
+    m.c_ylow_r2_b = Constraint(expr=m.T2_next >= data['temp_min_comfort_threshold'] - M*m.y_low_r2)
+    m.c_yok_r2_a  = Constraint(expr=m.T2_next >= data['temp_OK_threshold'] - M*(1 - m.y_ok_r2))
+    m.c_yok_r2_b  = Constraint(expr=m.T2_next <= data['temp_OK_threshold'] + M*m.y_ok_r2)
+    m.c_ov2_a = Constraint(expr=m.ov2_next >= m.y_low_r2)
+    m.c_ov2_b = Constraint(expr=m.ov2_next <= u_prev_r2 + m.y_low_r2)
+    m.c_ov2_c = Constraint(expr=m.ov2_next >= u_prev_r2 - m.y_ok_r2)
+    m.c_ov2_d = Constraint(expr=m.ov2_next <= 1 - m.y_ok_r2)
+
+    # Valore futuro atteso
     if next_t_weights:
         for k in range(K_SCENARIOS):
             expected_future_cost += (1.0 / K_SCENARIOS) * (
-                next_t_weights['intercept'] + 
-                next_t_weights['T1'] * ((m.T1_next - 22.0) / 8.0) + 
-                next_t_weights['T2'] * ((m.T2_next - 22.0) / 8.0) + 
-                next_t_weights['H'] * ((m.H_next - 40.0) / 40.0) + 
-                # Solo le variabili esogene cambiano per scenario k
-                next_t_weights['price_t'] * (scen_data[k]['price_t'] / 10.0) + 
-                next_t_weights['price_previous'] * (state['price_t'] / 10.0) + 
-                next_t_weights['Occ1'] * ((scen_data[k]['Occ1'] - 20.0) / 30.0) + 
+                next_t_weights['intercept'] +
+                next_t_weights['T1'] * ((m.T1_next - 22.0) / 8.0) +
+                next_t_weights['T2'] * ((m.T2_next - 22.0) / 8.0) +
+                next_t_weights['H'] * ((m.H_next - 40.0) / 40.0) +
+                next_t_weights['price_t'] * (scen_data[k]['price_t'] / 10.0) +
+                next_t_weights['price_previous'] * (state['price_t'] / 10.0) +
+                next_t_weights['Occ1'] * ((scen_data[k]['Occ1'] - 20.0) / 30.0) +
                 next_t_weights['Occ2'] * ((scen_data[k]['Occ2'] - 10.0) / 20.0) +
-                next_t_weights['vent_counter'] * (m.vc_next / 3.0) + 
-                next_t_weights['low_override_r1'] * m.ov1_next + 
+                next_t_weights['vent_counter'] * (m.vc_next / 3.0) +
+                next_t_weights['low_override_r1'] * m.ov1_next +
                 next_t_weights['low_override_r2'] * m.ov2_next
             )
 
     m.obj = Objective(expr=immediate_cost + expected_future_cost, sense=minimize)
     SolverFactory('gurobi').solve(m, tee=False)
-    
-    return {"HeatPowerRoom1": value(m.p1), 
-            "HeatPowerRoom2": value(m.p2), 
+
+    return {"HeatPowerRoom1": value(m.p1),
+            "HeatPowerRoom2": value(m.p2),
             "VentilationON": int(value(m.v))}
 
 # ============================================================================

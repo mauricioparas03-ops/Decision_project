@@ -4,16 +4,16 @@ from Data.PriceProcessRestaurant import price_model
 from Data.OccupancyProcessRestaurant import next_occupancy_levels 
 
 VFA_WEIGHTS = {
-    0: {'T1': -15.1817, 'T2': -11.0521, 'H': 39.4454, 'price_t': 212.7638, 'price_previous': -63.8921, 'Occ1': 1.1614, 'Occ2': 2.6545, 'vent_counter': 0.0, 'low_override_r1': 0.0, 'low_override_r2': 0.0, 'intercept': 61.2015},
-    1: {'T1': -14.1244, 'T2': -13.8221, 'H': 32.051, 'price_t': 177.6584, 'price_previous': 21.2621, 'Occ1': 3.8173, 'Occ2': 1.1884, 'vent_counter': 29.6988, 'low_override_r1': 29.0793, 'low_override_r2': 39.2134, 'intercept': 15.148},
-    2: {'T1': -9.1318, 'T2': -9.182, 'H': 24.4011, 'price_t': 126.1836, 'price_previous': 61.5023, 'Occ1': 5.7478, 'Occ2': 3.3838, 'vent_counter': 16.4466, 'low_override_r1': 22.6582, 'low_override_r2': 24.7516, 'intercept': 10.4387},
-    3: {'T1': -17.557, 'T2': -16.5797, 'H': 15.3877, 'price_t': 99.3028, 'price_previous': 59.9706, 'Occ1': 6.1186, 'Occ2': 4.0846, 'vent_counter': 2.3173, 'low_override_r1': 12.7133, 'low_override_r2': 14.0686, 'intercept': 11.5319},
-    4: {'T1': -26.0576, 'T2': -27.876, 'H': 11.4536, 'price_t': 77.0006, 'price_previous': 50.8787, 'Occ1': 5.2653, 'Occ2': 2.6675, 'vent_counter': 0.5803, 'low_override_r1': 7.1369, 'low_override_r2': 6.5221, 'intercept': 10.2653},
-    5: {'T1': -22.763, 'T2': -22.5669, 'H': 10.6605, 'price_t': 51.6956, 'price_previous': 30.0293, 'Occ1': 2.148, 'Occ2': 1.9294, 'vent_counter': -2.972, 'low_override_r1': 13.2232, 'low_override_r2': 10.1819, 'intercept': 10.8758},
-    6: {'T1': -14.6925, 'T2': -15.7399, 'H': 10.6009, 'price_t': 38.4131, 'price_previous': 17.1451, 'Occ1': 1.4967, 'Occ2': 3.4037, 'vent_counter': -2.0077, 'low_override_r1': 19.8444, 'low_override_r2': 15.3903, 'intercept': 4.8376},
-    7: {'T1': -13.2809, 'T2': -13.4543, 'H': 8.1404, 'price_t': 37.288, 'price_previous': 15.1328, 'Occ1': -3.1742, 'Occ2': -0.3237, 'vent_counter': -2.7326, 'low_override_r1': 16.1651, 'low_override_r2': 19.3024, 'intercept': 0.6569},
-    8: {'T1': -8.2088, 'T2': -7.0544, 'H': 8.1414, 'price_t': 37.3914, 'price_previous': 19.8036, 'Occ1': -1.6459, 'Occ2': 0.1354, 'vent_counter': -1.6509, 'low_override_r1': 19.0625, 'low_override_r2': 18.5755, 'intercept': -11.3484},
-    9: {'T1': 0.0892, 'T2': 0.0221, 'H': 5.9628, 'price_t': 25.3733, 'price_previous': 15.9955, 'Occ1': 0.5999, 'Occ2': 0.5879, 'vent_counter': -1.6118, 'low_override_r1': 11.2778, 'low_override_r2': 11.1858, 'intercept': -12.1428},
+    0: {'T1': -8.3368, 'T2': -8.4183, 'H': 29.7709, 'price_t': 184.571, 'price_previous': -57.4942, 'Occ1': -3.552, 'Occ2': 2.8204, 'vent_counter': 0.0, 'low_override_r1': 0.0, 'low_override_r2': 0.0, 'intercept': 61.8075},
+    1: {'T1': -9.0447, 'T2': -9.7995, 'H': 32.2628, 'price_t': 165.7444, 'price_previous': 14.3447, 'Occ1': -0.3919, 'Occ2': -0.5644, 'vent_counter': 19.7049, 'low_override_r1': 35.0862, 'low_override_r2': 36.1438, 'intercept': 18.7716},
+    2: {'T1': -4.9311, 'T2': -5.4965, 'H': 28.4026, 'price_t': 121.5497, 'price_previous': 57.3255, 'Occ1': -4.0862, 'Occ2': -2.1746, 'vent_counter': 30.4878, 'low_override_r1': 28.0968, 'low_override_r2': 24.6015, 'intercept': 11.5262},
+    3: {'T1': -13.4041, 'T2': -13.0665, 'H': 24.7283, 'price_t': 93.6153, 'price_previous': 61.0787, 'Occ1': 1.1298, 'Occ2': 1.5432, 'vent_counter': 16.2653, 'low_override_r1': 15.5998, 'low_override_r2': 12.6422, 'intercept': 4.0037},
+    4: {'T1': -20.4344, 'T2': -21.65, 'H': 15.8882, 'price_t': 70.4439, 'price_previous': 46.0781, 'Occ1': 1.1665, 'Occ2': 1.5098, 'vent_counter': 2.8218, 'low_override_r1': 12.3018, 'low_override_r2': 6.2533, 'intercept': 9.0091},
+    5: {'T1': -16.5171, 'T2': -17.8856, 'H': 14.1182, 'price_t': 50.727, 'price_previous': 30.1955, 'Occ1': 0.5515, 'Occ2': 3.104, 'vent_counter': -0.8036, 'low_override_r1': 12.8945, 'low_override_r2': 8.8533, 'intercept': 4.2197},
+    6: {'T1': -14.2408, 'T2': -15.6891, 'H': 11.5555, 'price_t': 37.6434, 'price_previous': 18.5224, 'Occ1': 2.8728, 'Occ2': -4.854, 'vent_counter': -2.4179, 'low_override_r1': 16.3108, 'low_override_r2': 10.3472, 'intercept': 8.6357},
+    7: {'T1': -13.694, 'T2': -12.6146, 'H': 6.6726, 'price_t': 40.0104, 'price_previous': 16.3184, 'Occ1': 3.6869, 'Occ2': -0.5152, 'vent_counter': -1.6426, 'low_override_r1': 21.0921, 'low_override_r2': 17.5114, 'intercept': -3.8933},
+    8: {'T1': -6.7134, 'T2': -7.4186, 'H': 6.4815, 'price_t': 42.0865, 'price_previous': 22.7026, 'Occ1': -0.0187, 'Occ2': -1.4704, 'vent_counter': -1.3588, 'low_override_r1': 17.507, 'low_override_r2': 18.3879, 'intercept': -13.812},
+    9: {'T1': 0.603, 'T2': -0.3511, 'H': 5.1107, 'price_t': 27.7555, 'price_previous': 19.7616, 'Occ1': 0.5282, 'Occ2': -0.2876, 'vent_counter': -0.6616, 'low_override_r1': 10.8383, 'low_override_r2': 10.3956, 'intercept': -14.3331},
 }
 
 def select_action(state):
@@ -110,23 +110,27 @@ def select_action(state):
     if t < 9:
         w = VFA_WEIGHTS[t+1]
         
-        # Forecasts for exogenous variables at step t+1
-        expected_price_next = price_model(state['price_t'], state['price_previous'])
-        expected_occ1_next, expected_occ2_next = next_occupancy_levels(state['Occ1'], state['Occ2'])
-        
-        # APPLICHIAMO LA NORMALIZZAZIONE DIRETTAMENTE ALLE VARIABILI DEL MILP
-        expected_future_cost = (
-            w['intercept'] +   
-            w['T1'] * ((m.T1_next - 22.0) / 8.0) +  
-            w['T2'] * ((m.T2_next - 22.0) / 8.0) + 
-            w['H'] * ((m.H_next - 40.0) / 40.0) +
-            w['vent_counter'] * (m.vent_counter_next / 3.0) + 
-            w['low_override_r1'] * m.ov1_next + 
-            w['low_override_r2'] * m.ov2_next +
-            w['price_t'] * (expected_price_next / 10.0) +
-            w['price_previous'] * (state['price_t'] / 10.0) + 
-            w['Occ1'] * ((expected_occ1_next - 20.0) / 30.0) +
-            w['Occ2'] * ((expected_occ2_next - 10.0) / 20.0)
+        K_POLICY = 15
+        scen_data = []
+        for _ in range(K_POLICY):
+            sc_p = price_model(state['price_t'], state['price_previous'])
+            sc_o1, sc_o2 = next_occupancy_levels(state['Occ1'], state['Occ2'])
+            scen_data.append({'price_t': sc_p, 'Occ1': sc_o1, 'Occ2': sc_o2})
+
+        expected_future_cost = sum(
+            (1.0 / K_POLICY) * (
+                w['intercept'] +
+                w['T1'] * ((m.T1_next - 22.0) / 8.0) +
+                w['T2'] * ((m.T2_next - 22.0) / 8.0) +
+                w['H'] * ((m.H_next - 40.0) / 40.0) +
+                w['vent_counter'] * (m.vent_counter_next / 3.0) +
+                w['low_override_r1'] * m.ov1_next +
+                w['low_override_r2'] * m.ov2_next +
+                w['price_t'] * (scen_data[k]['price_t'] / 10.0) +
+                w['price_previous'] * (state['price_t'] / 10.0) +
+                w['Occ1'] * ((scen_data[k]['Occ1'] - 20.0) / 30.0) +
+                w['Occ2'] * ((scen_data[k]['Occ2'] - 10.0) / 20.0)
+            ) for k in range(K_POLICY)
         )
     else:
         # end of the day: future cost is zero 
