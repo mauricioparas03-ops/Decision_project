@@ -146,7 +146,7 @@ def build_multisp_model(state, tree, horizon):
         T_r = state[f'T{r}']
         if T_r > DATA['temp_max_comfort_threshold']:
             low_override[r] = 0 
-    eps = 0.0001
+    eps = 10e-6
     # ── Node sets ─────────────────────────────────────────────────────────────
     # Root è sempre il primo nodo del primo stage
     root_id = tree[0][0]['id']
@@ -242,7 +242,7 @@ def build_multisp_model(state, tree, horizon):
     m.c_real2 = Constraint(expr=m.T_in0[2]== T_init[2])
     m.c_hum = Constraint(expr=m.Hum0 == H_init)
 
-    m.c_0thigh1 = Constraint(m.R, rule=lambda m,r: m.T_in0[r] >= m.Thigh - m.M_temp*(1 - m.y_high0[r]))
+    m.c_0thigh1 = Constraint(m.R, rule=lambda m,r: m.T_in0[r] >= eps + m.Thigh - m.M_temp*(1 - m.y_high0[r]))
     m.c_0thigh2 = Constraint(m.R, rule=lambda m,r: m.T_in0[r] <= m.Thigh + m.M_temp*m.y_high0[r])
     m.c_0heat_off = Constraint(m.R, rule=lambda m,r: m.Heat0[r] <= m.Pr*(1 - m.y_high0[r]))
 
@@ -344,11 +344,11 @@ def build_multisp_model(state, tree, horizon):
 
     # ── 3. Big-M Logic (Comfort & Overrule) ───────────────────────────────────
     # These apply to ALL nodes
-    m.c_thigh1 = Constraint(m.RN, rule=lambda m,r,n: m.T_in[r,n] >= m.Thigh - m.M_temp*(1 - m.y_high[r,n]))
+    m.c_thigh1 = Constraint(m.RN, rule=lambda m,r,n: m.T_in[r,n] >= eps + m.Thigh - m.M_temp*(1 - m.y_high[r,n]))
     m.c_thigh2 = Constraint(m.RN, rule=lambda m,r,n: m.T_in[r,n] <= m.Thigh + m.M_temp*m.y_high[r,n])
     m.c_heat_off = Constraint(m.RN, rule=lambda m,r,n: m.Heat[r,n] <= m.Pr*(1 - m.y_high[r,n]))
 
-    m.c_tlow1 = Constraint(m.RN, rule=lambda m,r,n: m.T_in[r,n] <= m.Tmin + m.M_temp*(1 - m.y_low[r,n]))
+    m.c_tlow1 = Constraint(m.RN, rule=lambda m,r,n: m.T_in[r,n] <= m.Tmin  + m.M_temp*(1 - m.y_low[r,n]))
     m.c_tlow2 = Constraint(m.RN, rule=lambda m,r,n: m.T_in[r,n] >= m.Tmin + eps - m.M_temp*m.y_low[r,n])
 
     m.c_tok1 = Constraint(m.RN, rule=lambda m,r,n: m.T_in[r,n] >= m.Tok - m.M_temp*(1 - m.y_ok[r,n]))
