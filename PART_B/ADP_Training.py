@@ -111,7 +111,7 @@ def solve_bellman_equation_milp(state, next_t_weights):
     expected_future_cost = 0
     tout = data['outdoor_temperature'][int(state['current_time'])]
     M = 500
-
+    eps = 10e-6
     # Dinamica fisica
     m.ct1 = Constraint(expr=
         m.T1_next == state['T1'] + data['heat_exchange_coeff']*(state['T2']-state['T1']) +
@@ -136,7 +136,7 @@ def solve_bellman_equation_milp(state, next_t_weights):
     # Overrule logica next state Room 1
     u_prev_r1 = state['low_override_r1']
     m.c_ylow_r1_a = Constraint(expr=m.T1_next <= data['temp_min_comfort_threshold'] + M*(1 - m.y_low_r1))
-    m.c_ylow_r1_b = Constraint(expr=m.T1_next >= data['temp_min_comfort_threshold'] - M*m.y_low_r1)
+    m.c_ylow_r1_b = Constraint(expr=m.T1_next >= data['temp_min_comfort_threshold'] + eps - M*m.y_low_r1)
     m.c_yok_r1_a  = Constraint(expr=m.T1_next >= data['temp_OK_threshold'] - M*(1 - m.y_ok_r1))
     m.c_yok_r1_b  = Constraint(expr=m.T1_next <= data['temp_OK_threshold'] + M*m.y_ok_r1)
     m.c_ov1_a = Constraint(expr=m.ov1_next >= m.y_low_r1)
@@ -147,7 +147,7 @@ def solve_bellman_equation_milp(state, next_t_weights):
     # Overrule logica next state Room 2
     u_prev_r2 = state['low_override_r2']
     m.c_ylow_r2_a = Constraint(expr=m.T2_next <= data['temp_min_comfort_threshold'] + M*(1 - m.y_low_r2))
-    m.c_ylow_r2_b = Constraint(expr=m.T2_next >= data['temp_min_comfort_threshold'] - M*m.y_low_r2)
+    m.c_ylow_r2_b = Constraint(expr=m.T2_next >= data['temp_min_comfort_threshold'] + eps - M*m.y_low_r2)
     m.c_yok_r2_a  = Constraint(expr=m.T2_next >= data['temp_OK_threshold'] - M*(1 - m.y_ok_r2))
     m.c_yok_r2_b  = Constraint(expr=m.T2_next <= data['temp_OK_threshold'] + M*m.y_ok_r2)
     m.c_ov2_a = Constraint(expr=m.ov2_next >= m.y_low_r2)
