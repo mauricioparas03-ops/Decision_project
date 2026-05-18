@@ -326,7 +326,11 @@ def build_multistage_model(state, nodes, paths, na_groups, horizon):
     m.TS  = m.T * m.S
 
     # ── Initial state (identical to SP_policy) ────────────────────────────────
-    v_prev = 1 if state['vent_counter'] > 0 else 0
+    # vent_counter > 0 means vent was recently on, but only [1,2] means forced ON
+    # vent_counter >= U_vent means the inertia window has expired
+    U_vent = int(DATA['U_vent']) if 'U_vent' in DATA else 3  # match your m.U_vent
+    v_prev = 1 if 0 < state['vent_counter'] < U_vent else 0
+    #v_prev = 1 if state['vent_counter'] > 0 else 0
 
     m.Tinit    = Param(m.R, initialize={1: state['T1'], 2: state['T2']})
     m.Hinit    = Param(initialize=state['H'])
@@ -400,6 +404,19 @@ def build_multistage_model(state, nodes, paths, na_groups, horizon):
 
     m.T_in = Var(m.RTS, domain=NonNegativeReals)
     m.Hum  = Var(m.TS,  domain=NonNegativeReals)
+
+
+    # Slack variables for comfort violations (added to objective)
+    # At the top of build_multistage_model, add one parameter:
+    COMFORT_BUFFER = 1.5   # °C above Tmin to start penalizing
+    COMFORT_WEIGHT = 5.0   # tune this — should be ~mean(price * Pr) to make it meaningful
+
+    m.slack_temp = Var(m.RTS, domain=NonNegativeReals)
+
+    # slack >= (Tmin + buffer) - T_in  (active only when T_in is below buffer)
+    m.CSlack = Constraint(m.RTS,
+        rule=lambda m, r, t, s: m.slack_temp[r, t, s] >= 
+            (m.Tmin + COMFORT_BUFFER) - m.T_in[r, t, s])
 
     # =========================================================================
     # CONSTRAINTS — copy-paste identical to SP_policy.py
@@ -534,8 +551,20 @@ def build_multistage_model(state, nodes, paths, na_groups, horizon):
     # =========================================================================
     # OBJECTIVE — probability-weighted cost (IDENTICAL to SP_policy)
     # =========================================================================
+    # def objective(m):
+    #     return sum(
+    #         m.pi[s] * sum(
+    #             m.prices[t, s] * (
+    #                 sum(m.Heat[r, t, s] for r in m.R)
+    #                 + m.Vent[t, s] * m.Pvent
+    #             )
+    #             for t in m.T
+    #         )
+    #         for s in m.S
+    #     )
+    # m.obj = Objective(rule=objective, sense=minimize)
     def objective(m):
-        return sum(
+        energy_cost = sum(
             m.pi[s] * sum(
                 m.prices[t, s] * (
                     sum(m.Heat[r, t, s] for r in m.R)
@@ -545,6 +574,16 @@ def build_multistage_model(state, nodes, paths, na_groups, horizon):
             )
             for s in m.S
         )
+        # Penalise scenarios where T_in is below Tmin + buffer
+        # slack[r,t,s] = max(0, (Tmin + buffer) - T_in[r,t,s])
+        comfort_penalty = sum(
+            m.pi[s] * sum(
+                COMFORT_WEIGHT * m.slack_temp[r, t, s]
+                for r in m.R for t in m.T
+            )
+            for s in m.S
+        )
+        return energy_cost + comfort_penalty
     m.obj = Objective(rule=objective, sense=minimize)
 
     return m

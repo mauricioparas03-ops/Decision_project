@@ -225,7 +225,7 @@ for day in range(E_days):
         if t + 1 < T_hours:
             state['Occ1'] = day_occ1[t + 1]
             state['Occ2'] = day_occ2[t + 1]
-            state['price_previous'] = state['price_t']
+            state['price_previous'] = day_prices[t]
             state['price_t'] = day_prices[t + 1]
             # current_time already updated in apply_dynamics, so it will automatically move to the next hour in the next iteration
         print(f"Day {day}, Time {t}: Decision taken: {decision}", flush=True)
