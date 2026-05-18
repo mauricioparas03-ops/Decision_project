@@ -14,7 +14,9 @@ from pathlib import Path
 import numpy as np
 from v2_Checks import check_and_sanitize_action
 
-data_dir = Path(__file__).resolve().parent / "Data"
+data_dir    = Path(__file__).resolve().parent / "Data"
+outputs_dir = Path(__file__).resolve().parent / "outputs"
+outputs_dir.mkdir(exist_ok=True)
 
 occ1 = pd.read_csv(data_dir / "OccupancyRoom1.csv").values.flatten()
 occ2 = pd.read_csv(data_dir / "OccupancyRoom2.csv").values.flatten()
@@ -125,7 +127,7 @@ print(f"\nCost average over {E_days} days: {np.mean(daily_costs):.2f}", flush=Tr
 
 policy_name = "multiSP"
 np.savez(
-    f"results_{policy_name}.npz",
+    outputs_dir / f"results_{policy_name}.npz",
     daily_costs         = daily_costs,
     daily_vent_hours    = daily_vent_hours,
     daily_overrule_acts = daily_overrule_acts,

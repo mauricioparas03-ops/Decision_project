@@ -1,6 +1,10 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+from pathlib import Path
+
+outputs_dir = Path(__file__).resolve().parent / "outputs"
+outputs_dir.mkdir(exist_ok=True)
 
 policies = ["dummy", "lookahead", "SP", "multiSP", "hindsight"]
 
@@ -26,7 +30,7 @@ colors = {
 
 results = {}
 for name in policies:
-    data = np.load(f"results_{name}.npz")
+    data = np.load(outputs_dir / f"results_{name}.npz")
     results[name] = {key: data[key] for key in data.files}
     print(f"\n{'='*55}")
     print(f"Summary for: {name}")
@@ -69,8 +73,8 @@ for bar, mean, std in zip(bars, means, stds):
 
 
 plt.tight_layout()
-plt.savefig("fig_avg_cost_comparison.pdf", bbox_inches='tight')
-plt.savefig("fig_avg_cost_comparison.png", dpi=150, bbox_inches='tight')
+plt.savefig(outputs_dir / "fig_avg_cost_comparison.pdf", bbox_inches='tight')
+plt.savefig(outputs_dir / "fig_avg_cost_comparison.png", dpi=150, bbox_inches='tight')
 plt.show()
 
 # =============================================================================
@@ -101,8 +105,8 @@ ax2.spines['top'].set_visible(False)
 ax2.spines['right'].set_visible(False)
 
 plt.tight_layout()
-plt.savefig("fig_cost_distribution.pdf", bbox_inches='tight')
-plt.savefig("fig_cost_distribution.png", dpi=150, bbox_inches='tight')
+plt.savefig(outputs_dir / "fig_cost_distribution.pdf", bbox_inches='tight')
+plt.savefig(outputs_dir / "fig_cost_distribution.png", dpi=150, bbox_inches='tight')
 plt.show()
 
 # =============================================================================
@@ -145,6 +149,6 @@ for i, p in enumerate(sorted_policies, start=1):
 plt.title("Policy Comparison — All Metrics (100 experiments)",
           fontsize=11, pad=12)
 plt.tight_layout()
-plt.savefig("fig_metrics_table.pdf", bbox_inches='tight')
-plt.savefig("fig_metrics_table.png", dpi=150, bbox_inches='tight')
+plt.savefig(outputs_dir / "fig_metrics_table.pdf", bbox_inches='tight')
+plt.savefig(outputs_dir / "fig_metrics_table.png", dpi=150, bbox_inches='tight')
 plt.show()
