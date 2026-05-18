@@ -18,6 +18,20 @@ BRANCHING_FACTOR = 100
 # ── System Parameters ─────────────────────────────────
 DATA = get_fixed_data()
 
+# ── weights for the hybrid policy ─────────────────────────────────────────────
+
+VFA_WEIGHTS = {
+    0: {'T1': 0.0, 'T2': 0.0, 'H': 0.0, 'price_t': 166.811, 'price_previous': -52.4137, 'Occ1': 2.3454, 'Occ2': -6.5845, 'vent_counter': 0.0, 'low_override_r1': 0.0, 'low_override_r2': 0.0, 'intercept': 81.7666},
+    1: {'T1': -3.6597, 'T2': -6.6471, 'H': 3.2715, 'price_t': 136.232, 'price_previous': 43.6886, 'Occ1': 0.4884, 'Occ2': -3.691, 'vent_counter': -3.1349, 'low_override_r1': 0.0, 'low_override_r2': 0.0, 'intercept': 45.5579},
+    2: {'T1': -17.8462, 'T2': -16.712, 'H': 17.0878, 'price_t': 94.55, 'price_previous': 60.9206, 'Occ1': 1.7097, 'Occ2': -1.4284, 'vent_counter': -14.5423, 'low_override_r1': 10.304, 'low_override_r2': 16.7219, 'intercept': 34.5378},
+    3: {'T1': -12.4565, 'T2': -10.464, 'H': 20.5213, 'price_t': 76.5996, 'price_previous': 53.3461, 'Occ1': 1.7842, 'Occ2': 0.6308, 'vent_counter': -14.0177, 'low_override_r1': 18.7843, 'low_override_r2': 24.1062, 'intercept': 34.9512},
+    4: {'T1': -7.7689, 'T2': -9.1995, 'H': 25.1733, 'price_t': 71.1307, 'price_previous': 47.4648, 'Occ1': -1.3999, 'Occ2': -2.4511, 'vent_counter': -5.531, 'low_override_r1': 17.9065, 'low_override_r2': 22.11, 'intercept': 27.4075},
+    5: {'T1': -10.7988, 'T2': -9.031, 'H': 25.8565, 'price_t': 58.8176, 'price_previous': 43.0421, 'Occ1': -4.0887, 'Occ2': -2.6151, 'vent_counter': 2.2132, 'low_override_r1': 17.9992, 'low_override_r2': 19.7543, 'intercept': 11.6112},
+    6: {'T1': -12.1684, 'T2': -10.1931, 'H': 17.439, 'price_t': 45.3847, 'price_previous': 33.2699, 'Occ1': -2.407, 'Occ2': 0.0989, 'vent_counter': 4.8596, 'low_override_r1': 14.7093, 'low_override_r2': 17.8049, 'intercept': 1.5964},
+    7: {'T1': -12.2613, 'T2': -11.4534, 'H': 12.7152, 'price_t': 33.5577, 'price_previous': 22.9294, 'Occ1': 3.7094, 'Occ2': 4.1436, 'vent_counter': 0.3337, 'low_override_r1': 17.4723, 'low_override_r2': 18.7128, 'intercept': -8.3538},
+    8: {'T1': -8.5566, 'T2': -9.4265, 'H': 14.9203, 'price_t': 30.1314, 'price_previous': 20.0247, 'Occ1': 0.7527, 'Occ2': 3.4089, 'vent_counter': 4.6502, 'low_override_r1': 14.0543, 'low_override_r2': 15.5494, 'intercept': -16.3612},
+    9: {'T1': -1.7524, 'T2': -2.5389, 'H': 5.123, 'price_t': 12.532, 'price_previous': 9.7659, 'Occ1': 1.0408, 'Occ2': -0.2031, 'vent_counter': 3.8551, 'low_override_r1': 13.4865, 'low_override_r2': 14.3706, 'intercept': -8.692},
+}
 # ── Scenario tree construction ─────────────────────────────────────────────
 def build_scenario_tree(state, L, S, K):
     global_id_counter = 1
@@ -108,24 +122,7 @@ def get_descendant_chains(node_id, depth, nodes_map):
             all_chains.append([node_id] + cc)
     return all_chains
     
-
-def build_multisp_model(state, tree, horizon):
-    """
-    Build the multi-stage stochastic MILP indexed on scenario-tree nodes.
-
-    Parameters
-    ----------
-    current_state : dict – keys: T1, T2, H,
-                                 vent_counter,
-                                 low_override_r1, low_override_r2
-    tree          : list of lists of dicts, where tree[tau] is the list of nodes at stage tau, and each node is a dict with keys:
-                                 id, price, price_prev, occupancy1, occupancy2, probability, parent_id, children
-    horizon       : int
-
-    Returns
-    -------
-    Pyomo ConcreteModel (unsolved)
-    """
+def build_hybrid_model(state, tree, horizon):
     d = DATA
 
     T_init = {1: state['T1'], 2: state['T2']}
@@ -165,7 +162,7 @@ def build_multisp_model(state, tree, horizon):
 
     # Foglie: nodi che non hanno figli
     leaf_ids = [nid for nid, node in nodes_map.items() if not node['children']]
-    internal_ids = [nid for nid in all_node_ids if nid not in leaf_ids]
+
     # Solo i nodi dopo la root
     non_root_ids = [nid for nid in all_node_ids if nid != root_id]
 
@@ -179,9 +176,7 @@ def build_multisp_model(state, tree, horizon):
     m.R      = Set(initialize=[1, 2])
     m.N = Set(initialize=non_root_ids)
     m.RN = Set(initialize = m.R* m.N)
-    m.Nint = Set(initialize=internal_ids)
-    m.Nleaf = Set(initialize=leaf_ids)
-    m.Nall = Set(initialize=all_node_ids)
+    m.leaf = Set(initialize=leaf_ids)
 
     
     m.Pr     = Param(initialize=d['heating_max_power'])
@@ -223,17 +218,17 @@ def build_multisp_model(state, tree, horizon):
     m.T_in0 = Var(m.R, domain=NonNegativeReals)
     m.Hum0  = Var(domain=NonNegativeReals)
     # internal stages
-    m.Heat  = Var(m.R * m.Nint, domain=NonNegativeReals, bounds=(0, d['heating_max_power']))
-    m.Vent  = Var(m.Nint,  domain=Binary)
-    m.Vstart= Var(m.Nint,  domain=Binary)
+    m.Heat  = Var(m.RN, domain=NonNegativeReals, bounds=(0, d['heating_max_power']))
+    m.Vent  = Var(m.N,  domain=Binary)
+    m.Vstart= Var(m.N,  domain=Binary)
     # Overrule indicator variables
-    m.y_low  = Var(m.R * m.Nint, domain=Binary)  
-    m.y_ok   = Var(m.R * m.Nint, domain=Binary)  
-    m.y_high = Var(m.R * m.Nint, domain=Binary)   
-    m.u      = Var(m.R * m.Nint, domain=Binary) 
+    m.y_low  = Var(m.RN, domain=Binary)  
+    m.y_ok   = Var(m.RN, domain=Binary)  
+    m.y_high = Var(m.RN, domain=Binary)   
+    m.u      = Var(m.RN, domain=Binary) 
     # ── State variables (all nodes) ───────────────────────────────────────────
-    m.T_in = Var(m.R * m.Nall, domain=NonNegativeReals)
-    m.Hum  = Var(m.Nall,        domain=NonNegativeReals)
+    m.T_in = Var(m.RN, domain=NonNegativeReals)
+    m.Hum  = Var(m.N,        domain=NonNegativeReals)
 
     node_stage = {}
     for stage_idx, stage_nodes in enumerate(tree):
@@ -427,33 +422,4 @@ def build_multisp_model(state, tree, horizon):
         ) + state['price_t'] * (m.Heat0[1] + m.Heat0[2] + m.Pvent * m.Vent0)
     m.obj = Objective(rule=obj_rule, sense=minimize)
 
-    return m    
-
-def multiSP_policy(state):
-    t         = state['current_time']
-    remaining = DATA['num_timeslots'] - t
-    horizon   = min(HORIZON_MULTI, remaining)
-    tree = build_scenario_tree(state, horizon, S=BRANCHING_FACTOR, K=N_CLUSTERS)
-    model = build_multisp_model(state, tree, horizon)
-    solver = SolverFactory('gurobi')
-    result = solver.solve(model, tee=False)
-    # ── Guard against infeasible / failed solves ──────────────────────────────
-    if result.solver.termination_condition not in (
-        TerminationCondition.optimal,
-        TerminationCondition.feasible,
-    ):
-        warnings.warn(
-            f"Gurobi failed at time {state['current_time']} with termination condition "
-            f"{result.solver.termination_condition}. Falling back to zero action.",
-            RuntimeWarning,
-        )
-        return {'HeatPowerRoom1': 0.0, 'HeatPowerRoom2': 0.0, 'VentilationON': 0}
-    # ── Extract first-stage decisions from the solved model ───────────────────
-    p1 = value(model.Heat0[1])
-    p2 = value(model.Heat0[2])
-    v = value(model.Vent0)
-    return {'HeatPowerRoom1': p1, 'HeatPowerRoom2': p2, 'VentilationON': v}
-
-def select_action(state):
-    return multiSP_policy(state)
-
+    return m 

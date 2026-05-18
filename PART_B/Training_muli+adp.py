@@ -1,24 +1,74 @@
 import numpy as np
 import warnings
 from sklearn.cluster import KMeans
-from pyomo.environ import (
-    ConcreteModel, Set, Param, Var, Objective, Constraint,
-    SolverFactory, NonNegativeReals, minimize, Binary, value,
-)
+from pyomo.environ import *
+from sklearn.linear_model import Ridge  
+import matplotlib
+matplotlib.use('Agg')
 from pyomo.opt import TerminationCondition
-from Data.v2_SystemCharacteristics import get_fixed_data
-from Data.PriceProcessRestaurant import price_model
+from EnvFunctions import apply_dynamics
+from Data.PriceProcessRestaurant import price_model 
 from Data.OccupancyProcessRestaurant import next_occupancy_levels
+from Data.v2_SystemCharacteristics import get_fixed_data
 
-# ── Hyper-parameters ───────────────────────────────────────────────────────────
+# HYPERPARAMETERS & SETTINGS
+N_SAMPLES = 80
+K_SCENARIOS = 15
+K_SCENARIOS_BACKWARD = 30 
+ITERATIONS_I = 20
+T_HOURS = 10
+SWEEPS_J = 6
+BETA = 0.25
 HORIZON_MULTI = 4    
 N_CLUSTERS    = 3 
 BRANCHING_FACTOR = 100
 
 # ── System Parameters ─────────────────────────────────
-DATA = get_fixed_data()
+data = get_fixed_data()
+feature_cols = [
+                "T1", 
+                "T2", 
+                "H", 
+                "price_t", 
+                "price_previous", 
+                "Occ1", 
+                "Occ2", 
+                "vent_counter", 
+                "low_override_r1", 
+                "low_override_r2"
+                ]
 
-# ── Scenario tree construction ─────────────────────────────────────────────
+# Initialization (initial eta_1 guess)
+vfa_weights = {}
+
+for t in range(T_HOURS):
+    vfa_weights[t] = {}
+    
+    # Inizializza tutte le feature a 0.0
+    for feat in feature_cols:
+        vfa_weights[t][feat] = 0.0
+        
+    # Aggiunge l'intercetta a 0.0
+    vfa_weights[t]['intercept'] = 0.0
+
+
+# ============================================================================
+# 0. FUNZIONE DI NORMALIZZAZIONE (NUOVA)
+# ============================================================================
+def get_normalized_features(state):
+    """Normalizza gli stati per stabilizzare la regressione lineare"""
+    return {
+        'T1': (state['T1'] - 22.0) / 8.0,
+        'T2': (state['T2'] - 22.0) / 8.0,
+        'H': (state['H'] - 40.0) / 40.0,
+        'Occ1': (state['Occ1'] - 20.0) / 30.0,
+        'Occ2': (state['Occ2'] - 10.0) / 20.0,
+        'price_t': state['price_t'] / 10.0,
+        'price_previous': state['price_previous'] / 10.0,
+        'vent_counter': state['vent_counter'] / 3.0,
+        'low_override_r1': state['low_override_r1'],
+        'low_override_r2': state['low_override_r2']
+    }
 def build_scenario_tree(state, L, S, K):
     global_id_counter = 1
 
@@ -91,6 +141,38 @@ def build_scenario_tree(state, L, S, K):
                 
         tree.append(new_nodes)
     return tree
+def vent_counter_expr(n, nodes_map, m, v_prev, U_vent):
+    """
+    Restituisce un'espressione Pyomo lineare per il vent_counter al nodo n.
+    Somma le variabili Vent lungo il percorso verso la root, fino a U_vent passi.
+    
+    Nota: è una somma (non conta solo i consecutivi) per restare lineare.
+    """
+    terms = []
+    current_id = n
+    steps = 0
+
+    while steps < U_vent:
+        if current_id not in nodes_map:
+            break
+
+        terms.append(m.Vent[current_id])
+        steps += 1
+
+        parent_id = nodes_map[current_id]['parent_id']
+
+        if parent_id not in nodes_map:          # il padre è la root
+            if steps < U_vent:
+                terms.append(m.Vent0)           # variabile simbolica Pyomo
+                steps += 1
+            if steps < U_vent:
+                terms.append(v_prev)            # costante (int 0/1)
+                steps += 1
+            break
+
+        current_id = parent_id
+
+    return sum(terms)
 
 def get_descendant_chains(node_id, depth, nodes_map):
 
@@ -108,26 +190,15 @@ def get_descendant_chains(node_id, depth, nodes_map):
             all_chains.append([node_id] + cc)
     return all_chains
     
-
-def build_multisp_model(state, tree, horizon):
-    """
-    Build the multi-stage stochastic MILP indexed on scenario-tree nodes.
-
-    Parameters
-    ----------
-    current_state : dict – keys: T1, T2, H,
-                                 vent_counter,
-                                 low_override_r1, low_override_r2
-    tree          : list of lists of dicts, where tree[tau] is the list of nodes at stage tau, and each node is a dict with keys:
-                                 id, price, price_prev, occupancy1, occupancy2, probability, parent_id, children
-    horizon       : int
-
-    Returns
-    -------
-    Pyomo ConcreteModel (unsolved)
-    """
-    d = DATA
-
+# ============================================================================
+# 1. MILP FUNCTION (FIXED)
+# ============================================================================
+def solve_bellman_equation_milp(state, next_t_weights):
+    d = data
+    t         = state['current_time']
+    remaining = d['num_timeslots'] - t
+    horizon   = min(HORIZON_MULTI, remaining)
+    tree = build_scenario_tree(state, horizon, S=BRANCHING_FACTOR, K=N_CLUSTERS)
     T_init = {1: state['T1'], 2: state['T2']}
     H_init = state['H']
     occ1_root = state['Occ1']
@@ -136,15 +207,15 @@ def build_multisp_model(state, tree, horizon):
     vent_counter = int(state['vent_counter'])
     v_prev       = 1 if vent_counter > 0 else 0
     low_override = {}
-    for r, T_init_r, T_ok_threshold in [(1, state['T1'], DATA['temp_OK_threshold']),
-                                        (2, state['T2'], DATA['temp_OK_threshold'])]:
+    for r, T_init_r, T_ok_threshold in [(1, state['T1'], data['temp_OK_threshold']),
+                                        (2, state['T2'], data['temp_OK_threshold'])]:
         ov = state[f'low_override_r{r}']
         if T_init_r >= T_ok_threshold:
             ov = 0   # override già terminato
         low_override[r] = ov
     for r in [1, 2]:
         T_r = state[f'T{r}']
-        if T_r > DATA['temp_max_comfort_threshold']:
+        if T_r > data['temp_max_comfort_threshold']:
             low_override[r] = 0 
     eps = 10e-6
     # ── Node sets ─────────────────────────────────────────────────────────────
@@ -165,7 +236,7 @@ def build_multisp_model(state, tree, horizon):
 
     # Foglie: nodi che non hanno figli
     leaf_ids = [nid for nid, node in nodes_map.items() if not node['children']]
-    internal_ids = [nid for nid in all_node_ids if nid not in leaf_ids]
+
     # Solo i nodi dopo la root
     non_root_ids = [nid for nid in all_node_ids if nid != root_id]
 
@@ -179,9 +250,6 @@ def build_multisp_model(state, tree, horizon):
     m.R      = Set(initialize=[1, 2])
     m.N = Set(initialize=non_root_ids)
     m.RN = Set(initialize = m.R* m.N)
-    m.Nint = Set(initialize=internal_ids)
-    m.Nleaf = Set(initialize=leaf_ids)
-    m.Nall = Set(initialize=all_node_ids)
 
     
     m.Pr     = Param(initialize=d['heating_max_power'])
@@ -223,17 +291,17 @@ def build_multisp_model(state, tree, horizon):
     m.T_in0 = Var(m.R, domain=NonNegativeReals)
     m.Hum0  = Var(domain=NonNegativeReals)
     # internal stages
-    m.Heat  = Var(m.R * m.Nint, domain=NonNegativeReals, bounds=(0, d['heating_max_power']))
-    m.Vent  = Var(m.Nint,  domain=Binary)
-    m.Vstart= Var(m.Nint,  domain=Binary)
+    m.Heat  = Var(m.RN, domain=NonNegativeReals, bounds=(0, d['heating_max_power']))
+    m.Vent  = Var(m.N,  domain=Binary)
+    m.Vstart= Var(m.N,  domain=Binary)
     # Overrule indicator variables
-    m.y_low  = Var(m.R * m.Nint, domain=Binary)  
-    m.y_ok   = Var(m.R * m.Nint, domain=Binary)  
-    m.y_high = Var(m.R * m.Nint, domain=Binary)   
-    m.u      = Var(m.R * m.Nint, domain=Binary) 
+    m.y_low  = Var(m.RN, domain=Binary)  
+    m.y_ok   = Var(m.RN, domain=Binary)  
+    m.y_high = Var(m.RN, domain=Binary)   
+    m.u      = Var(m.RN, domain=Binary) 
     # ── State variables (all nodes) ───────────────────────────────────────────
-    m.T_in = Var(m.R * m.Nall, domain=NonNegativeReals)
-    m.Hum  = Var(m.Nall,        domain=NonNegativeReals)
+    m.T_in = Var(m.RN, domain=NonNegativeReals)
+    m.Hum  = Var(m.N,        domain=NonNegativeReals)
 
     node_stage = {}
     for stage_idx, stage_nodes in enumerate(tree):
@@ -414,46 +482,202 @@ def build_multisp_model(state, tree, horizon):
 
     # Humidity threshold forces ventilation
     m.c_hum_limit = Constraint(m.N, rule=lambda m, n: m.Hum[n] <= m.Hhigh + m.M_hum * m.Vent[n])
+    
 
 
     # ── 5. Objective: Minimize Expected Cost ──────────────────────────────────
     def obj_rule(m):
         # Total cost = Sum over all nodes (Prob_node * Cost_node)
-        return sum(
+        running_cost_nodes = sum(
             nodes_map[n]['probability'] * (
                 m.prices[n] * sum(m.Heat[r, n] for r in m.R) +
                 m.prices[n] * m.Pvent * m.Vent[n]
             ) for n in m.N 
-        ) + state['price_t'] * (m.Heat0[1] + m.Heat0[2] + m.Pvent * m.Vent0)
+        )
+        immediate_cost_root = state['price_t'] * (m.Heat0[1] + m.Heat0[2] + m.Pvent * m.Vent0)
+        vfa_term = 0.0
+        t_vfa = state["current_time"] + horizon  # Il tempo futuro in cui si trovano le foglie
+        
+        if t_vfa in next_t_weights:
+            w = next_t_weights[t_vfa]
+            
+            for n in leaf_ids:
+                prob = nodes_map[n]['probability']
+                p_id = nodes_map[n]['parent_id']
+                
+                # Recupero dati esogeni del ramo per la normalizzazione
+                price_t1 = nodes_map[n]['price']
+                price_prev = nodes_map[p_id]['price'] if p_id != root_id else state['price_t']
+                occ1_2 = nodes_map[n]['occupancy1']
+                occ2_2 = nodes_map[n]['occupancy2']
+                
+                # Approssimazione lineare del vent_counter sulla foglia basata sul tempo minimo hardware
+                vc_expr = vent_counter_expr(n, nodes_map, m, v_prev, int(value(m.U_vent)))
+
+                # Equazione VFA lineare normalizzata
+                node_vfa = (
+                    w['intercept'] + 
+                    w['T1'] * ((m.T_in[1, n] - 22.0) / 8.0) + 
+                    w['T2'] * ((m.T_in[2, n] - 22.0) / 8.0) + 
+                    w['H'] * ((m.Hum[n] - 40.0) / 40.0) +
+                    w['vent_counter'] * (vc_expr / 3.0) + 
+                    w['low_override_r1'] * m.u[1, n] + 
+                    w['low_override_r2'] * m.u[2, n] + 
+                    w['price_t'] * (price_t1 / 10.0) +
+                    w['price_previous'] * (price_prev / 10.0) +  
+                    w['Occ1'] * ((occ1_2 - 20.0) / 30.0) + 
+                    w['Occ2'] * ((occ2_2 - 10.0) / 20.0)
+                )
+                
+                # Somma pesata per la probabilità dello scenario
+                vfa_term += prob * node_vfa
+        return immediate_cost_root + running_cost_nodes + vfa_term
     m.obj = Objective(rule=obj_rule, sense=minimize)
 
-    return m    
+    SolverFactory('gurobi').solve(m, tee=False)
 
-def multiSP_policy(state):
-    t         = state['current_time']
-    remaining = DATA['num_timeslots'] - t
-    horizon   = min(HORIZON_MULTI, remaining)
-    tree = build_scenario_tree(state, horizon, S=BRANCHING_FACTOR, K=N_CLUSTERS)
-    model = build_multisp_model(state, tree, horizon)
-    solver = SolverFactory('gurobi')
-    result = solver.solve(model, tee=False)
-    # ── Guard against infeasible / failed solves ──────────────────────────────
-    if result.solver.termination_condition not in (
-        TerminationCondition.optimal,
-        TerminationCondition.feasible,
-    ):
-        warnings.warn(
-            f"Gurobi failed at time {state['current_time']} with termination condition "
-            f"{result.solver.termination_condition}. Falling back to zero action.",
-            RuntimeWarning,
-        )
-        return {'HeatPowerRoom1': 0.0, 'HeatPowerRoom2': 0.0, 'VentilationON': 0}
-    # ── Extract first-stage decisions from the solved model ───────────────────
-    p1 = value(model.Heat0[1])
-    p2 = value(model.Heat0[2])
-    v = value(model.Vent0)
-    return {'HeatPowerRoom1': p1, 'HeatPowerRoom2': p2, 'VentilationON': v}
+    return {"HeatPowerRoom1": value(m.p1),
+            "HeatPowerRoom2": value(m.p2),
+            "VentilationON": int(value(m.v))}
 
-def select_action(state):
-    return multiSP_policy(state)
+# ============================================================================
+# 2. MATHEMATICAL FUNCTION (Used in Backward to calculate target on FIXED actions)
+# ============================================================================
+def evaluate_fixed_action(state, action, next_weights):
+    """Calculates V*(x_{n,t}) = r(y_{n,t}, u_{n,t}) + E[ V^(y_{n,t+1} ; eta^j) ] """
+    imm_cost = state['price_t'] * (action['HeatPowerRoom1'] + action['HeatPowerRoom2'] + action['VentilationON'] * data['ventilation_power'])
+    if next_weights is None: return imm_cost
 
+    expected_vfa = 0.0
+    tout = data['outdoor_temperature'][int(state['current_time'])]
+
+    for _ in range(K_SCENARIOS_BACKWARD):
+        sc_p = price_model(state['price_t'], state['price_previous'])
+        sc_o1, sc_o2 = next_occupancy_levels(state['Occ1'], state['Occ2'])
+
+        # Deterministic Dynamics
+        T1_n = state['T1'] + data['heat_exchange_coeff']*(state['T2']-state['T1']) + data['thermal_loss_coeff']*(tout-state['T1']) + data['heating_efficiency_coeff']*action['HeatPowerRoom1'] - data['heat_vent_coeff']*action['VentilationON'] + data['heat_occupancy_coeff']*state['Occ1']
+        T2_n = state['T2'] + data['heat_exchange_coeff']*(state['T1']-state['T2']) + data['thermal_loss_coeff']*(tout-state['T2']) + data['heating_efficiency_coeff']*action['HeatPowerRoom2'] - data['heat_vent_coeff']*action['VentilationON'] + data['heat_occupancy_coeff']*state['Occ2']
+        H_n = state['H'] - data['humidity_vent_coeff']*action['VentilationON'] + data['humidity_occupancy_coeff']*(state['Occ1']+state['Occ2'])
+        vc_n = (state['vent_counter'] + 1) * action['VentilationON']
+
+        # Override Memory Logic           
+        if T1_n < data['temp_min_comfort_threshold']: ov1_n = 1
+        elif T1_n >= data['temp_OK_threshold']: ov1_n = 0
+        else: ov1_n = state['low_override_r1']
+
+        if T2_n < data['temp_min_comfort_threshold']: ov2_n = 1
+        elif T2_n >= data['temp_OK_threshold']: ov2_n = 0
+        else: ov2_n = state['low_override_r2']
+
+        # MODIFICA: Creazione dello stato futuro simulato per la normalizzazione
+        next_state_sim = {
+            'T1': T1_n, 
+            'T2': T2_n, 
+            'H': H_n,
+            'Occ1': sc_o1, 
+            'Occ2': sc_o2,
+            'price_t': sc_p, 
+            'price_previous': state['price_t'],
+            'vent_counter': vc_n,
+            'low_override_r1': ov1_n, 
+            'low_override_r2': ov2_n
+        }
+        
+        norm_feats = get_normalized_features(next_state_sim)
+
+        # Linear approximation (usando le feature normalizzate)
+        vfa_k = (next_weights['intercept'] + 
+                 next_weights['T1']*norm_feats['T1'] + 
+                 next_weights['T2']*norm_feats['T2'] + 
+                 next_weights['H']*norm_feats['H'] + 
+                 next_weights['price_t']*norm_feats['price_t'] + 
+                 next_weights['price_previous']*norm_feats['price_previous'] + 
+                 next_weights['Occ1']*norm_feats['Occ1'] + 
+                 next_weights['Occ2']*norm_feats['Occ2'] + 
+                 next_weights['vent_counter']*norm_feats['vent_counter'] + 
+                 next_weights['low_override_r1']*norm_feats['low_override_r1'] + 
+                 next_weights['low_override_r2']*norm_feats['low_override_r2'])
+        
+        expected_vfa += (1.0 / K_SCENARIOS_BACKWARD) * vfa_k
+
+    return imm_cost + expected_vfa
+
+
+# ============================================================================
+# MAIN LOOP: APPROXIMATE POLICY ITERATION (Variant B)
+# ============================================================================
+
+for i in range(ITERATIONS_I):
+    print(f"\nOUTER LOOP i={i+1}/{ITERATIONS_I} (Policy Improvement)")
+
+    visited_states_actions = {t: [] for t in range(T_HOURS)}
+
+    current_states = []
+    for n in range(N_SAMPLES):
+        state_n = get_fixed_data().copy()
+        state_n['T1'] = np.random.uniform(18.0, 26.0)
+        state_n['T2'] = np.random.uniform(18.0, 26.0)
+        state_n['H'] = np.random.uniform(20.0, 70.0)
+        state_n['Occ1'] = np.random.uniform(25.0, 35.0)
+        state_n['Occ2'] = np.random.uniform(15.0, 25.0)
+        state_n['price_t'] = np.random.uniform(0.0, 12.0)
+        state_n['price_previous'] = np.random.uniform(0.0, 12.0)
+        state_n['current_time']   = 0
+        current_states.append(state_n)
+
+    # Forward pass
+    for t in range(T_HOURS):
+        next_t_weights = vfa_weights[t + 1] if t < T_HOURS - 1 else None
+        for n in range(N_SAMPLES):
+            state_n = current_states[n]
+            state_n['current_time'] = t
+
+            action = solve_bellman_equation_milp(state_n, next_t_weights)
+            visited_states_actions[t].append((state_n.copy(), action))
+
+            next_state_n, _ = apply_dynamics(state_n, action, data)
+            if t + 1 < T_HOURS:
+                new_occ1, new_occ2 = next_occupancy_levels(state_n['Occ1'], state_n['Occ2'])
+                new_price = price_model(state_n['price_t'], state_n['price_previous'])
+                next_state_n['Occ1']           = new_occ1
+                next_state_n['Occ2']           = new_occ2
+                next_state_n['price_previous'] = state_n['price_t']
+                next_state_n['price_t']        = new_price
+            current_states[n] = next_state_n
+
+            
+    # BACKWARD PASS
+    inner_weights = {t: {k: v for k,v in vfa_weights[t].items()} for t in range(T_HOURS)}
+    
+    for j in range(SWEEPS_J):
+        print(f"  Inner Sweep j={j+1}/{SWEEPS_J} (Policy Evaluation)")
+        for t in reversed(range(T_HOURS)):
+            X_features, Y_targets = [], []
+            next_t_weights_j = inner_weights[t + 1] if t < T_HOURS - 1 else None
+            
+            for state_n, action_n in visited_states_actions[t]:
+                target_value = evaluate_fixed_action(state_n, action_n, next_t_weights_j)
+                Y_targets.append(target_value)
+                norm_feats = get_normalized_features(state_n)
+                X_features.append([norm_feats[feat] for feat in feature_cols])
+                        
+            if len(X_features) > 0:
+                regressor = Ridge(alpha=1.0, fit_intercept=True)
+                regressor.fit(X_features, Y_targets)
+                for idx, feat_name in enumerate(feature_cols):
+                    inner_weights[t][feat_name] = regressor.coef_[idx]
+                inner_weights[t]['intercept'] = regressor.intercept_
+
+    # POLICY IMPROVEMENT
+    for t in range(T_HOURS):
+        for k in feature_cols + ['intercept']:
+            vfa_weights[t][k] = (1 - BETA) * vfa_weights[t][k] + BETA * inner_weights[t][k]
+
+# FINAL OUTPUT
+print("\n=== FINAL RESULT: VFA_WEIGHTS ===")
+print("VFA_WEIGHTS = {")
+for t in range(T_HOURS):
+    clean_weights = {k: round(float(v), 4) for k, v in vfa_weights[t].items()}
+    print(f"    {t}: {clean_weights},")
+print("}")
