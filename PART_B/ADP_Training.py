@@ -1,4 +1,6 @@
 import numpy as np
+import csv
+from pathlib import Path
 from pyomo.environ import *
 from sklearn.linear_model import Ridge  
 import matplotlib
@@ -320,3 +322,20 @@ for t in range(T_HOURS):
     clean_weights = {k: round(float(v), 4) for k, v in vfa_weights[t].items()}
     print(f"    {t}: {clean_weights},")
 print("}")
+
+# Save VFA weights to CSV for later policy usage
+output_csv = Path(__file__).resolve().parent / "Data" / "vfa_weights.csv"
+output_csv.parent.mkdir(parents=True, exist_ok=True)
+
+csv_columns = ["t"] + feature_cols + ["intercept"]
+with open(output_csv, mode="w", newline="", encoding="utf-8") as f:
+    writer = csv.DictWriter(f, fieldnames=csv_columns)
+    writer.writeheader()
+    for t in range(T_HOURS):
+        row = {"t": t}
+        for feat in feature_cols:
+            row[feat] = float(vfa_weights[t][feat])
+        row["intercept"] = float(vfa_weights[t]["intercept"])
+        writer.writerow(row)
+
+print(f"Saved VFA weights to CSV: {output_csv}")

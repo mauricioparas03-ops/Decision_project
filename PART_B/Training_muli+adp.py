@@ -498,7 +498,7 @@ def solve_bellman_equation_milp(state, next_t_weights):
         vfa_term = 0.0
         t_vfa = state["current_time"] + horizon  # Il tempo futuro in cui si trovano le foglie
         
-        if t_vfa in next_t_weights:
+        if next_t_weights is not None and t_vfa in next_t_weights:
             w = next_t_weights[t_vfa]
             
             for n in leaf_ids:
@@ -539,7 +539,7 @@ def solve_bellman_equation_milp(state, next_t_weights):
     return {"HeatPowerRoom1": value(m.Heat0[1]),
             "HeatPowerRoom2": value(m.Heat0[2]),
             "VentilationON": int(value(m.Vent0))}
-
+    
 # ============================================================================
 # 2. MATHEMATICAL FUNCTION (Used in Backward to calculate target on FIXED actions)
 # ============================================================================
