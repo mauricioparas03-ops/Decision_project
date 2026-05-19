@@ -1,6 +1,8 @@
 import numpy as np
 import warnings
+import time
 from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
 from pyomo.environ import (
     ConcreteModel, Set, Param, Var, Objective, Constraint,
     SolverFactory, NonNegativeReals, minimize, Binary, value,
@@ -50,7 +52,7 @@ def build_scenario_tree(state, L, S, K):
                 sample_occ2.append(occ2_next)
 
             # --- Cluster samples into K clusters  ---
-            X = np.column_stack([samples_prices, sample_occ1, sample_occ2])  # shape (n_samples, 3) — DO NOT use column_stack, it transposes!
+            X = np.column_stack([samples_prices, sample_occ1, sample_occ2])  
             n_samples = X.shape[0]
             K_eff = min(K, n_samples)
 
@@ -58,33 +60,78 @@ def build_scenario_tree(state, L, S, K):
                 # no samples generated, skip
                 continue
 
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+
+
             if K_eff == 1:
                 # single cluster: centroid is the mean, all labels 0
                 labels = np.zeros(n_samples, dtype=int)
-                centers = X.mean(axis=0, keepdims=True)
+                # Mediod = sample closest to the mean
+                mean = X_scaled.mean(axis=0)
+                medoid_indices = [np.argmin(np.linalg.norm(X_scaled - mean, axis=1))]
             else:
-                kmeans = KMeans(n_clusters=K_eff, random_state=0, n_init=10).fit(X)
+                kmeans = KMeans(n_clusters=K_eff, random_state=42, n_init=10).fit(X_scaled)
                 labels = kmeans.labels_
-                centers = kmeans.cluster_centers_
+                centroids = kmeans.cluster_centers_
+
+                medoid_indices = []
+                for k in range(K_eff):
+                    cluster_mask = labels == k
+                    cluster_points = X_scaled[cluster_mask]
+                    dist = np.linalg.norm(cluster_points - centroids[k], axis=1)
+                     # index back into original X
+                    original_indices = np.where(cluster_mask)[0]
+                    medoid_idx = original_indices[np.argmin(dist)]
+                    medoid_indices.append(medoid_idx)
+
+            centers = X[medoid_indices]  # centroids in original scale
+
+            # --- Identify worst-case scenario (highest total occupancy) ---
+            occ_totals = np.array(sample_occ1) + np.array(sample_occ2)
+            worst_idx = int(np.argmax(occ_totals))
+
+            # Check if worst-case is already a medoid (avoid duplication)
+            worst_is_medoid = worst_idx in medoid_indices
+
+            WORST_CASE_PROB = 0.10  # fraction of parent probability reserved for worst case
+            scale = 1.0 if worst_is_medoid else (1.0 - WORST_CASE_PROB)
 
             # --- Create new nodes for each cluster center ---
             for k in range(K_eff):
                 # Conditional probability: p(cluster k | parent)
                 conditional_prob = np.sum(labels == k) / n_samples
-                joint_prob = node['probability'] * conditional_prob
+                joint_prob = node['probability'] * conditional_prob * scale
                 new_node = {
-                    "id": global_id_counter,           # ID univoco (es: 5, 6, 7...)
+                    "id": global_id_counter,           
                     "price": centers[k][0],
                     "price_prev": node['price'],
                     "occupancy1": centers[k][1],
                     "occupancy2": centers[k][2],
                     "probability": joint_prob,
-                    "parent_id": node['id'],          # Puntatore globale al padre
+                    "parent_id": node['id'],          
                     "children": []
                 }
 
-                node['children'].append(new_node['id'])
-                new_nodes.append(new_node)
+                node['children'].append(new_node['id'])  
+                new_nodes.append(new_node)               
+                global_id_counter += 1
+
+                # --- Add worst-case node (only if not already captured by a medoid) ---
+            if not worst_is_medoid:
+                worst_node = {
+                    "id": global_id_counter,
+                    "price": samples_prices[worst_idx],
+                    "price_prev": node['price'],
+                    "occupancy1": sample_occ1[worst_idx],
+                    "occupancy2": sample_occ2[worst_idx],
+                    "probability": node['probability'] * WORST_CASE_PROB,
+                    "parent_id": node['id'],
+                    "children": []
+                }
+
+                node['children'].append(worst_node['id'])
+                new_nodes.append(worst_node)
                 global_id_counter += 1
                 
         tree.append(new_nodes)
@@ -429,10 +476,13 @@ def multiSP_policy(state):
     t         = state['current_time']
     remaining = DATA['num_timeslots'] - t
     horizon   = min(HORIZON_MULTI, remaining)
+    #t0 = time.time()
     tree = build_scenario_tree(state, horizon, S=BRANCHING_FACTOR, K=N_CLUSTERS)
+    #t1 = time.time()
+    ##print(f"Scenario tree built in {t1 - t0:.2f} seconds.", flush=True)
     model = build_multisp_model(state, tree, horizon)
     solver = SolverFactory('gurobi')
-    result = solver.solve(model, tee=False)
+    result = solver.solve(model, tee=False, options={'MIPGap': 0.05, 'TimeLimit': 8, 'Threads': 4})
     # ── Guard against infeasible / failed solves ──────────────────────────────
     if result.solver.termination_condition not in (
         TerminationCondition.optimal,
@@ -444,6 +494,19 @@ def multiSP_policy(state):
             RuntimeWarning,
         )
         return {'HeatPowerRoom1': 0.0, 'HeatPowerRoom2': 0.0, 'VentilationON': 0}
+    # If we timed out but have an incumbent, use it
+    if result.solver.termination_condition == TerminationCondition.maxTimeLimit:
+        if result.solver.primal_bound is not None:
+            warnings.warn(
+                f"Gurobi timed out at time {state['current_time']}, using best incumbent found.",
+                RuntimeWarning,
+            )
+        else:
+            warnings.warn(
+                f"Gurobi timed out at time {state['current_time']} with no incumbent. Falling back to zero action.",
+                RuntimeWarning,
+            )
+            return {'HeatPowerRoom1': 0.0, 'HeatPowerRoom2': 0.0, 'VentilationON': 0}
     # ── Extract first-stage decisions from the solved model ───────────────────
     p1 = value(model.Heat0[1])
     p2 = value(model.Heat0[2])
