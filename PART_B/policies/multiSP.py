@@ -49,7 +49,7 @@ def build_scenario_tree(state, L, S, K):
                 sample_occ1.append(occ1_next)
                 sample_occ2.append(occ2_next)
 
-            # --- Cluster samples into K clusters (NO SCALING - align with MultiSP) ---
+            # --- Cluster samples into K clusters  ---
             X = np.column_stack([samples_prices, sample_occ1, sample_occ2])  # shape (n_samples, 3) — DO NOT use column_stack, it transposes!
             n_samples = X.shape[0]
             K_eff = min(K, n_samples)
@@ -71,8 +71,6 @@ def build_scenario_tree(state, L, S, K):
             for k in range(K_eff):
                 # Conditional probability: p(cluster k | parent)
                 conditional_prob = np.sum(labels == k) / n_samples
-                
-                # Joint probability: p(path to this node)
                 joint_prob = node['probability'] * conditional_prob
                 new_node = {
                     "id": global_id_counter,           # ID univoco (es: 5, 6, 7...)
@@ -179,9 +177,7 @@ def build_multisp_model(state, tree, horizon):
     m.R      = Set(initialize=[1, 2])
     m.N = Set(initialize=non_root_ids)
     m.RN = Set(initialize = m.R* m.N)
-    m.Nint = Set(initialize=internal_ids)
-    m.Nleaf = Set(initialize=leaf_ids)
-    m.Nall = Set(initialize=all_node_ids)
+
 
     
     m.Pr     = Param(initialize=d['heating_max_power'])
@@ -223,17 +219,17 @@ def build_multisp_model(state, tree, horizon):
     m.T_in0 = Var(m.R, domain=NonNegativeReals)
     m.Hum0  = Var(domain=NonNegativeReals)
     # internal stages
-    m.Heat  = Var(m.R * m.Nint, domain=NonNegativeReals, bounds=(0, d['heating_max_power']))
-    m.Vent  = Var(m.Nint,  domain=Binary)
-    m.Vstart= Var(m.Nint,  domain=Binary)
+    m.Heat  = Var(m.RN, domain=NonNegativeReals, bounds=(0, d['heating_max_power']))
+    m.Vent  = Var(m.N,  domain=Binary)
+    m.Vstart= Var(m.N,  domain=Binary)
     # Overrule indicator variables
-    m.y_low  = Var(m.R * m.Nint, domain=Binary)  
-    m.y_ok   = Var(m.R * m.Nint, domain=Binary)  
-    m.y_high = Var(m.R * m.Nint, domain=Binary)   
-    m.u      = Var(m.R * m.Nint, domain=Binary) 
+    m.y_low  = Var(m.RN, domain=Binary)  
+    m.y_ok   = Var(m.RN, domain=Binary)  
+    m.y_high = Var(m.RN, domain=Binary)   
+    m.u      = Var(m.RN, domain=Binary) 
     # ── State variables (all nodes) ───────────────────────────────────────────
-    m.T_in = Var(m.R * m.Nall, domain=NonNegativeReals)
-    m.Hum  = Var(m.Nall,        domain=NonNegativeReals)
+    m.T_in = Var(m.RN, domain=NonNegativeReals)
+    m.Hum  = Var(m.N,        domain=NonNegativeReals)
 
     node_stage = {}
     for stage_idx, stage_nodes in enumerate(tree):
@@ -423,7 +419,7 @@ def build_multisp_model(state, tree, horizon):
             nodes_map[n]['probability'] * (
                 m.prices[n] * sum(m.Heat[r, n] for r in m.R) +
                 m.prices[n] * m.Pvent * m.Vent[n]
-            ) for n in m.N 
+            ) for n in m.N
         ) + state['price_t'] * (m.Heat0[1] + m.Heat0[2] + m.Pvent * m.Vent0)
     m.obj = Objective(rule=obj_rule, sense=minimize)
 
