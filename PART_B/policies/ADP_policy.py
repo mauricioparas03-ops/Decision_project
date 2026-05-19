@@ -1,8 +1,12 @@
 from pyomo.environ import *
+import csv
+from pathlib import Path
 from Data.v2_SystemCharacteristics import get_fixed_data
 from Data.PriceProcessRestaurant import price_model
 from Data.OccupancyProcessRestaurant import next_occupancy_levels 
 
+"""
+# Backup hardcoded weights
 VFA_WEIGHTS = {
     0: {'T1': -19.3152, 'T2': -21.1865, 'H': 31.6621, 'price_t': 168.9147, 'price_previous': -50.1968, 'Occ1': -2.5972, 'Occ2': 0.3543, 'vent_counter': 0.0, 'low_override_r1': 0.0, 'low_override_r2': 0.0, 'intercept': 69.9217},
     1: {'T1': -22.4024, 'T2': -18.5014, 'H': 37.4839, 'price_t': 140.5326, 'price_previous': 13.0276, 'Occ1': -2.5744, 'Occ2': -2.5641, 'vent_counter': 14.7577, 'low_override_r1': 11.1136, 'low_override_r2': 12.162, 'intercept': 34.108},
@@ -15,6 +19,24 @@ VFA_WEIGHTS = {
     8: {'T1': -5.4891, 'T2': -6.374, 'H': 11.936, 'price_t': 23.8296, 'price_previous': 17.6962, 'Occ1': -1.5938, 'Occ2': -1.7513, 'vent_counter': -0.0117, 'low_override_r1': 14.2927, 'low_override_r2': 16.77, 'intercept': -5.1312},
     9: {'T1': -1.2377, 'T2': -1.7029, 'H': 5.4459, 'price_t': 5.7299, 'price_previous': 4.9878, 'Occ1': 0.9003, 'Occ2': 0.2118, 'vent_counter': -0.1173, 'low_override_r1': 14.661, 'low_override_r2': 15.7373, 'intercept': -5.1025},
 }
+"""
+
+
+def load_vfa_weights_from_csv():
+    csv_path = Path(__file__).resolve().parents[1] / "Data" / "vfa_weights.csv"
+    if not csv_path.exists():
+        raise FileNotFoundError(f"VFA weights CSV not found: {csv_path}")
+
+    weights = {}
+    with open(csv_path, mode="r", newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            t = int(row["t"])
+            weights[t] = {k: float(v) for k, v in row.items() if k != "t"}
+    return weights
+
+
+VFA_WEIGHTS = load_vfa_weights_from_csv()
 
 def select_action(state):
     data = get_fixed_data()
