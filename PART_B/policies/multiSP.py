@@ -112,6 +112,15 @@ def build_scenario_tree(state, L, S, K):
 
             centers = X[medoid_indices]  # centroids in original scale
 
+            # --- Identify worst-case scenario (highest total occupancy) ---
+            occ_totals = np.array(sample_occ1) + np.array(sample_occ2)
+            worst_idx = int(np.argmax(occ_totals))
+
+            worst_is_medoid = worst_idx in medoid_indices
+
+            WORST_CASE_PROB = 0.10
+            scale = 1.0 if worst_is_medoid else (1.0 - WORST_CASE_PROB)
+
             # --- Create new nodes for each cluster center ---
             for k in range(K_eff):
                 # Conditional probability: p(cluster k | parent)
