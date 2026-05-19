@@ -43,7 +43,7 @@ from Data.OccupancyProcessRestaurant import next_occupancy_levels
 #_rng = np.random.default_rng(seed=42)
 
 # ── Hyper-parameters ───────────────────────────────────────────────────────────
-HORIZON       = 4    # lookahead steps  (must be >= 3 due to vent-inertia)
+HORIZON       = 2    # lookahead steps  (must be >= 3 due to vent-inertia)
 GEN_SCENARIOS = 50  # Monte-Carlo draws before clustering
 N_SCENARIOS   = 10   # K-Means clusters (representative scenarios)
 
@@ -179,6 +179,7 @@ def build_sp_model(state, price_dict_clus, occ_dict_clus, horizon, n_clus, proba
 
     d      = DATA    
     _num_timeslots = int(d['num_timeslots'])
+    eps = 10e-6
 
     m = ConcreteModel()
 
@@ -197,8 +198,28 @@ def build_sp_model(state, price_dict_clus, occ_dict_clus, horizon, n_clus, proba
     m.Hinit    = Param(initialize=state['H'])
     m.VentInit = Param(initialize=v_prev)
      # ── Scenario parameters ───────────────────────────────────────────────────
-    m.O      = Param(m.RTS, initialize=occ_dict_clus)
-    m.prices = Param(m.TS,  initialize=price_dict_clus)
+# Inizializzazione dinamica dell'occupazione
+    def occ_init_rule(m, r, t, s):
+        if t == 0:
+            # Al tempo presente usiamo l'occupazione REALE dello state
+            return float(state['Occ1'] if r == 1 else state['Occ2'])
+        else:
+            # Al tempo futuro usiamo il dato del cluster (tornando indietro all'indice relativo)
+            return occ_dict_clus[r, t, s]
+            
+    m.O = Param(m.RTS, rule=occ_init_rule)
+
+
+    # Inizializzazione dinamica dei prezzi
+    def price_init_rule(m, t, s):
+        if t == 0:
+            # Prezzo REALE attuale
+            return float(state['price_t'])
+        else:
+            # Prezzo futuro del cluster
+            return price_dict_clus[t, s]
+            
+    m.prices = Param(m.TS, rule=price_init_rule)
     m.pi     = Param(m.S,   initialize={s: float(probabilities[s])
                                         for s in range(n_clus)})
     m.Tout = Param(m.T, initialize={
@@ -273,7 +294,7 @@ def build_sp_model(state, price_dict_clus, occ_dict_clus, horizon, n_clus, proba
     # ── 1. High temperature: forced heating shutdown ──────────────────────────
     # y_high = 1  ⟺  T_in > Thigh
     m.CThigh1 = Constraint(m.RTS,
-        rule=lambda m, r, t, s: m.T_in[r, t, s] >= m.Thigh - m.M_temp * (1 - m.y_high[r, t, s]))
+        rule=lambda m, r, t, s: m.T_in[r, t, s] >= eps + m.Thigh - m.M_temp * (1 - m.y_high[r, t, s]))
     m.CThigh2 = Constraint(m.RTS,
         rule=lambda m, r, t, s: m.T_in[r, t, s] <= m.Thigh + m.M_temp * m.y_high[r, t, s])
     m.CHeatOff = Constraint(m.RTS,
@@ -284,7 +305,7 @@ def build_sp_model(state, price_dict_clus, occ_dict_clus, horizon, n_clus, proba
     m.CTlow1 = Constraint(m.RTS,
         rule=lambda m, r, t, s: m.T_in[r, t, s] <= m.Tmin + m.M_temp * (1 - m.y_low[r, t, s]))
     m.CTlow2 = Constraint(m.RTS,
-        rule=lambda m, r, t, s: m.T_in[r, t, s] >= m.Tmin - m.M_temp * m.y_low[r, t, s])
+        rule=lambda m, r, t, s: m.T_in[r, t, s] >= eps + m.Tmin - m.M_temp * m.y_low[r, t, s])
 
       # ── 3. Temperature-OK: overrule deactivation ──────────────────────────────
     # y_ok = 1  ⟺  T_in >= Tok
