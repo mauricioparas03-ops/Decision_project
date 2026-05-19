@@ -219,7 +219,7 @@ def run_distributed_algorithm(data, occupancies, store_weights,
     history['objective_value'] = np.asarray(history['objective_value'], dtype=float)
     history['lambda']          = np.asarray(history['lambda'],          dtype=float)
     history['violation']       = np.asarray(history['violation'],       dtype=float)
-    return history
+    return history, p_profiles  # return final p_profiles for energy calculation
 
 
 # ==============================================================================
@@ -259,7 +259,7 @@ def plot_objective_histories(results_by_label, output_path=None,
 
 def plot_lambda_histories(results_by_label, output_path=None):
     n_cases = len(results_by_label)
-    fig, axes = plt.subplots(1, n_cases, figsize=(4 * n_cases, 5), sharey=True)
+    fig, axes = plt.subplots(1, n_cases, figsize=(4 * n_cases, 5), sharey=True, constrained_layout=True)
     if n_cases == 1:
         axes = [axes]
 
@@ -273,10 +273,10 @@ def plot_lambda_histories(results_by_label, output_path=None):
         ax.grid(True, alpha=0.3)
 
     axes[0].set_ylabel('λ_t')
-    fig.suptitle('Evolution of dual multipliers λ_t across iterations', y=1.01)
+    fig.suptitle('Evolution of dual multipliers λ_t across iterations')
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(handles, labels, loc='upper right', ncol=2, fontsize=8)
-    plt.tight_layout()
+    #plt.tight_layout(rect=[0, 0, 1, 0.90])
 
     if output_path is not None:
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -286,7 +286,7 @@ def plot_lambda_histories(results_by_label, output_path=None):
 
 def plot_violation_histories(results_by_label, output_path=None):
     n_cases = len(results_by_label)
-    fig, axes = plt.subplots(1, n_cases, figsize=(4 * n_cases, 5), sharey=True)
+    fig, axes = plt.subplots(1, n_cases, figsize=(4 * n_cases, 5), sharey=True, constrained_layout=True)
     if n_cases == 1:
         axes = [axes]
 
@@ -301,10 +301,10 @@ def plot_violation_histories(results_by_label, output_path=None):
         ax.grid(True, alpha=0.3)
 
     axes[0].set_ylabel('Σ p_n,t − P_mall  (kW)')
-    fig.suptitle('Constraint violation Σp_n,t − P_mall across iterations', y=1.01)
+    fig.suptitle('Constraint violation Σp_n,t − P_mall across iterations')
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(handles, labels, loc='upper right', ncol=2, fontsize=8)
-    plt.tight_layout()
+    #plt.tight_layout(rect=[0, 0, 1, 0.90])
 
     if output_path is not None:
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -346,7 +346,7 @@ results_by_label = {}
 
 for alpha in step_sizes:
     print(f"[2/3] Running distributed algorithm  α = {alpha}")
-    results_by_label[f'α = {alpha}'] = run_distributed_algorithm(
+    results_by_label[f'α = {alpha}'], _ = run_distributed_algorithm(
         data=data,
         occupancies=occupancies,
         store_weights=store_weights,
@@ -358,7 +358,7 @@ for alpha in step_sizes:
 # Step 3 – Adaptive step size  α_k = α_0 / (1 + k),  α_0 = 5
 # ------------------------------------------------------------------
 print("[3/3] Running distributed algorithm  adaptive α_0 = 5")
-results_by_label['Adaptive α₀=5'] = run_distributed_algorithm(
+results_by_label['Adaptive α₀=5'], _ = run_distributed_algorithm(
     data=data,
     occupancies=occupancies,
     store_weights=store_weights,
@@ -386,6 +386,58 @@ plot_violation_histories(
     results_by_label,
     output_dir / 'task7_violation_history.pdf',
 )
+
+
+
+
+
+
+results_by_label['Adaptive α₀=5'], final_p_profiles = run_distributed_algorithm(
+    data=data,
+    occupancies=occupancies,
+    store_weights=store_weights,
+    num_iterations=days,
+    alpha_0=5.0,
+)
+
+# Total energy per store at final iteration
+total_energy_per_store = final_p_profiles.sum(axis=1)
+for n, e in enumerate(total_energy_per_store):
+    print(f"Store {n+1} (w={store_weights[n]:.0f}): {e:.2f} kWh")
+
+# ------------------------------------------------------------------
+# Per-store energy consumption (from adaptive run, final iteration)
+# ------------------------------------------------------------------
+total_energy_per_store = final_p_profiles.sum(axis=1)
+
+fig, ax = plt.subplots(figsize=(10, 5))
+bars = ax.bar(
+    range(1, N_stores + 1),
+    total_energy_per_store,
+    color=plt.cm.viridis(np.linspace(0.2, 0.85, N_stores)),
+    edgecolor='black',
+    linewidth=0.5
+)
+
+# Annotate each bar with the value
+for bar, e in zip(bars, total_energy_per_store):
+    ax.text(
+        bar.get_x() + bar.get_width() / 2,
+        bar.get_height() + 0.1,
+        f'{e:.1f}',
+        ha='center', va='bottom', fontsize=8
+    )
+
+ax.set_xlabel('Store index $n$')
+ax.set_ylabel('Total energy consumed (kWh)')
+ax.set_title('Per-store total energy consumption at final iteration (Adaptive $\\alpha_0=5$)')
+ax.set_xticks(range(1, N_stores + 1))
+ax.set_xticklabels([f'$n={n}$\n$w={int(store_weights[n-1])}$' 
+                    for n in range(1, N_stores + 1)], fontsize=8)
+ax.grid(True, axis='y', alpha=0.3)
+plt.tight_layout()
+plt.savefig(output_dir / 'task7_energy_per_store.pdf', bbox_inches='tight')
+plt.show()
 
 print("\n" + "=" * 60)
 print("Task 7 complete!")
