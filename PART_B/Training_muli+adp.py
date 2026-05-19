@@ -1,5 +1,7 @@
 import numpy as np
+import csv
 import warnings
+from pathlib import Path
 from sklearn.cluster import KMeans
 from pyomo.environ import *
 from sklearn.linear_model import Ridge  
@@ -10,15 +12,16 @@ from EnvFunctions import apply_dynamics
 from Data.PriceProcessRestaurant import price_model 
 from Data.OccupancyProcessRestaurant import next_occupancy_levels
 from Data.v2_SystemCharacteristics import get_fixed_data
+from sklearn.preprocessing import StandardScaler
 
 # HYPERPARAMETERS & SETTINGS
-N_SAMPLES = 80
-K_SCENARIOS = 15
-K_SCENARIOS_BACKWARD = 30 
-ITERATIONS_I = 20
+N_SAMPLES = 120
+K_SCENARIOS = 50
+K_SCENARIOS_BACKWARD = 100
+ITERATIONS_I = 80
 T_HOURS = 10
 SWEEPS_J = 6
-BETA = 0.25
+BETA = 0.15
 HORIZON_MULTI = 4    
 N_CLUSTERS    = 3 
 BRANCHING_FACTOR = 100
@@ -70,6 +73,19 @@ def get_normalized_features(state):
         'low_override_r2': state['low_override_r2']
     }
 def build_scenario_tree(state, L, S, K):
+    """Construct a scenario tree from the provided state.
+
+    Parameters
+    - state: dict containing the current price/occupancy and other state items
+    - L: planning horizon (number of stages)
+    - S: number of Monte Carlo samples per node
+    - K: number of clusters (branching) per stage
+
+    Returns
+    - tree: list of lists; tree[t] is the list of nodes at stage t. Each node
+      is a dict with keys: id, price, price_prev, occupancy1, occupancy2,
+      probability, parent_id, children
+    """
     global_id_counter = 1
 
     root = {
@@ -99,8 +115,8 @@ def build_scenario_tree(state, L, S, K):
                 sample_occ1.append(occ1_next)
                 sample_occ2.append(occ2_next)
 
-            # --- Cluster samples into K clusters (NO SCALING - align with MultiSP) ---
-            X = np.column_stack([samples_prices, sample_occ1, sample_occ2])  # shape (n_samples, 3) — DO NOT use column_stack, it transposes!
+            # --- Cluster samples into K clusters  ---
+            X = np.column_stack([samples_prices, sample_occ1, sample_occ2])  
             n_samples = X.shape[0]
             K_eff = min(K, n_samples)
 
@@ -108,30 +124,46 @@ def build_scenario_tree(state, L, S, K):
                 # no samples generated, skip
                 continue
 
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+
+
             if K_eff == 1:
                 # single cluster: centroid is the mean, all labels 0
                 labels = np.zeros(n_samples, dtype=int)
-                centers = X.mean(axis=0, keepdims=True)
+                # Mediod = sample closest to the mean
+                mean = X_scaled.mean(axis=0)
+                medoid_indices = [np.argmin(np.linalg.norm(X_scaled - mean, axis=1))]
             else:
-                kmeans = KMeans(n_clusters=K_eff, random_state=0, n_init=10).fit(X)
+                kmeans = KMeans(n_clusters=K_eff, random_state=0, n_init=10).fit(X_scaled)
                 labels = kmeans.labels_
-                centers = kmeans.cluster_centers_
+                centroids = kmeans.cluster_centers_
+
+                medoid_indices = []
+                for k in range(K_eff):
+                    cluster_mask = labels == k
+                    cluster_points = X_scaled[cluster_mask]
+                    dist = np.linalg.norm(cluster_points - centroids[k], axis=1)
+                     # index back into original X
+                    original_indices = np.where(cluster_mask)[0]
+                    medoid_idx = original_indices[np.argmin(dist)]
+                    medoid_indices.append(medoid_idx)
+
+            centers = X[medoid_indices]  # centroids in original scale
 
             # --- Create new nodes for each cluster center ---
             for k in range(K_eff):
                 # Conditional probability: p(cluster k | parent)
                 conditional_prob = np.sum(labels == k) / n_samples
-                
-                # Joint probability: p(path to this node)
                 joint_prob = node['probability'] * conditional_prob
                 new_node = {
-                    "id": global_id_counter,           # ID univoco (es: 5, 6, 7...)
+                    "id": global_id_counter,           
                     "price": centers[k][0],
                     "price_prev": node['price'],
                     "occupancy1": centers[k][1],
                     "occupancy2": centers[k][2],
                     "probability": joint_prob,
-                    "parent_id": node['id'],          # Puntatore globale al padre
+                    "parent_id": node['id'],          
                     "children": []
                 }
 
@@ -681,3 +713,20 @@ for t in range(T_HOURS):
     clean_weights = {k: round(float(v), 4) for k, v in vfa_weights[t].items()}
     print(f"    {t}: {clean_weights},")
 print("}")
+
+# Save final hybrid VFA weights to CSV for later policy usage
+output_csv = Path(__file__).resolve().parent / "Data" / "hybrid_vfa_weights.csv"
+output_csv.parent.mkdir(parents=True, exist_ok=True)
+
+csv_columns = ["t"] + feature_cols + ["intercept"]
+with open(output_csv, mode="w", newline="", encoding="utf-8") as f:
+    writer = csv.DictWriter(f, fieldnames=csv_columns)
+    writer.writeheader()
+    for t in range(T_HOURS):
+        row = {"t": t}
+        for feat in feature_cols:
+            row[feat] = float(vfa_weights[t][feat])
+        row["intercept"] = float(vfa_weights[t]["intercept"])
+        writer.writerow(row)
+
+print(f"Saved hybrid VFA weights to CSV: {output_csv}")

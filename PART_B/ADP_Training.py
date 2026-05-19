@@ -12,13 +12,13 @@ from Data.OccupancyProcessRestaurant import next_occupancy_levels
 from Data.v2_SystemCharacteristics import get_fixed_data
 
 # HYPERPARAMETERS & SETTINGS
-N_SAMPLES = 80
-K_SCENARIOS = 15
-K_SCENARIOS_BACKWARD = 30 
-ITERATIONS_I = 20
+N_SAMPLES = 120
+K_SCENARIOS = 50
+K_SCENARIOS_BACKWARD = 100
+ITERATIONS_I = 80
 T_HOURS = 10
 SWEEPS_J = 6
-BETA = 0.25
+BETA = 0.15
 
 data = get_fixed_data()
 feature_cols = [
@@ -40,16 +40,16 @@ vfa_weights = {}
 for t in range(T_HOURS):
     vfa_weights[t] = {}
     
-    # Inizializza tutte le feature a 0.0
+    # feature initialization
     for feat in feature_cols:
         vfa_weights[t][feat] = 0.0
         
-    # Aggiunge l'intercetta a 0.0
+    # intercept initialization
     vfa_weights[t]['intercept'] = 0.0
 
 
 # ============================================================================
-# 0. FUNZIONE DI NORMALIZZAZIONE (NUOVA)
+# NORMALIZATION FUNCTION
 # ============================================================================
 def get_normalized_features(state):
     """Normalizza gli stati per stabilizzare la regressione lineare"""
@@ -67,7 +67,7 @@ def get_normalized_features(state):
     }
 
 # ============================================================================
-# 1. MILP FUNCTION (FIXED)
+# 1. MILP FUNCTION
 # ============================================================================
 def solve_bellman_equation_milp(state, next_t_weights):
     
@@ -76,7 +76,7 @@ def solve_bellman_equation_milp(state, next_t_weights):
     m.p2 = Var(bounds=(0, data['heating_max_power']))
     m.v = Var(domain=Binary)
     
-    # Overrule stato corrente
+    # Overrule current state
     if state['T1'] > data['temp_max_comfort_threshold']:
         m.p1.fix(0)
     elif state['low_override_r1'] == 1 and state['T1'] < data['temp_OK_threshold']:
@@ -114,7 +114,7 @@ def solve_bellman_equation_milp(state, next_t_weights):
     tout = data['outdoor_temperature'][int(state['current_time'])]
     M = 500
     eps = 10e-6
-    # Dinamica fisica
+    # dynamics constraints
     m.ct1 = Constraint(expr=
         m.T1_next == state['T1'] + data['heat_exchange_coeff']*(state['T2']-state['T1']) +
                      data['thermal_loss_coeff']*(tout-state['T1']) +
@@ -135,7 +135,7 @@ def solve_bellman_equation_milp(state, next_t_weights):
 
     m.c_vc = Constraint(expr=m.vc_next == (state['vent_counter'] + 1) * m.v)
 
-    # Overrule logica next state Room 1
+    # Overrule logic next state Room 1
     u_prev_r1 = state['low_override_r1']
     m.c_ylow_r1_a = Constraint(expr=m.T1_next <= data['temp_min_comfort_threshold'] + M*(1 - m.y_low_r1))
     m.c_ylow_r1_b = Constraint(expr=m.T1_next >= data['temp_min_comfort_threshold'] + eps - M*m.y_low_r1)
@@ -146,7 +146,7 @@ def solve_bellman_equation_milp(state, next_t_weights):
     m.c_ov1_c = Constraint(expr=m.ov1_next >= u_prev_r1 - m.y_ok_r1)
     m.c_ov1_d = Constraint(expr=m.ov1_next <= 1 - m.y_ok_r1)
 
-    # Overrule logica next state Room 2
+    # Overrule logic next state Room 2
     u_prev_r2 = state['low_override_r2']
     m.c_ylow_r2_a = Constraint(expr=m.T2_next <= data['temp_min_comfort_threshold'] + M*(1 - m.y_low_r2))
     m.c_ylow_r2_b = Constraint(expr=m.T2_next >= data['temp_min_comfort_threshold'] + eps - M*m.y_low_r2)
@@ -157,7 +157,7 @@ def solve_bellman_equation_milp(state, next_t_weights):
     m.c_ov2_c = Constraint(expr=m.ov2_next >= u_prev_r2 - m.y_ok_r2)
     m.c_ov2_d = Constraint(expr=m.ov2_next <= 1 - m.y_ok_r2)
 
-    # Valore futuro atteso
+    # future expected value
     if next_t_weights:
         for k in range(K_SCENARIOS):
             expected_future_cost += (1.0 / K_SCENARIOS) * (
@@ -211,7 +211,7 @@ def evaluate_fixed_action(state, action, next_weights):
         elif T2_n >= data['temp_OK_threshold']: ov2_n = 0
         else: ov2_n = state['low_override_r2']
 
-        # MODIFICA: Creazione dello stato futuro simulato per la normalizzazione
+
         next_state_sim = {
             'T1': T1_n, 
             'T2': T2_n, 

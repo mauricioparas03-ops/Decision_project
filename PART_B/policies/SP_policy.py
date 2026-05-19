@@ -43,9 +43,13 @@ from Data.OccupancyProcessRestaurant import next_occupancy_levels
 #_rng = np.random.default_rng(seed=42)
 
 # ── Hyper-parameters ───────────────────────────────────────────────────────────
-HORIZON       = 2    # lookahead steps  (must be >= 3 due to vent-inertia)
+HORIZON       = 4    # lookahead steps  (must be >= 3 due to vent-inertia)
 GEN_SCENARIOS = 50  # Monte-Carlo draws before clustering
-N_CLUSTERS    = 10   # K-Means clusters (representative scenarios)
+N_SCENARIOS   = 10   # K-Means clusters (representative scenarios)
+
+_CLUSTERED_CACHE = None
+
+
 
 # =============================================================================
 # 1. SYSTEM PARAMETERS
@@ -59,7 +63,7 @@ DATA = get_fixed_data()
 
 def generate_scenarios(price_now, price_prev,
                        occ_r1_now, occ_r2_now,
-                        n_scenarios):
+                       horizon, n_scenarios):
     """
     Draw *n_scenarios* independent Monte-Carlo sample paths over *horizon*
     steps, starting from the current observed state.
@@ -75,15 +79,17 @@ def generate_scenarios(price_now, price_prev,
     for s in range(n_scenarios):
         p_cur,  p_prev  = price_now,  price_prev
         o1_cur, o2_cur  = occ_r1_now, occ_r2_now
-        p_next           = price_model(p_cur, p_prev)
-        o1_next, o2_next = next_occupancy_levels(o1_cur, o2_cur)
 
-        price_dict[s]   = p_next
-        occ_dict[1,s]  = o1_next
-        occ_dict[2,s]  = o2_next
+        for t in range(horizon):
+            p_next           = price_model(p_cur, p_prev)
+            o1_next, o2_next = next_occupancy_levels(o1_cur, o2_cur)
 
-        p_prev, p_cur   = p_cur,  p_next
-        o1_cur, o2_cur  = o1_next, o2_next
+            price_dict[t, s]   = p_next
+            occ_dict[1, t, s]  = o1_next
+            occ_dict[2, t, s]  = o2_next
+
+            p_prev, p_cur   = p_cur,  p_next
+            o1_cur, o2_cur  = o1_next, o2_next
 
     return price_dict, occ_dict
 
@@ -92,7 +98,7 @@ def generate_scenarios(price_now, price_prev,
 # 4. SCENARIO CLUSTERING  (K-Means → weighted centroids)
 # =============================================================================
 
-def cluster_scenarios(price_dict, occ_dict, n_clusters, scenarios_to_generate):
+def cluster_scenarios(price_dict, occ_dict, n_clusters, horizon, scenarios_to_generate):
     """
     Reduce *scenarios_to_generate* Monte-Carlo paths to *n_clusters*
     representative centroids via K-Means, returning Pyomo-ready dicts.
@@ -102,6 +108,7 @@ def cluster_scenarios(price_dict, occ_dict, n_clusters, scenarios_to_generate):
     price_dict            : {(t, s): float}
     occ_dict              : {(r, t, s): float}
     n_clusters            : int   – number of clusters (K)
+    horizon               : int   – lookahead horizon
     scenarios_to_generate : int   – total raw scenarios (= len of s-axis)
 
     Returns
@@ -117,16 +124,16 @@ def cluster_scenarios(price_dict, occ_dict, n_clusters, scenarios_to_generate):
     # Build feature matrix: each row = one scenario trajectory
     # columns = [price_t0, ..., price_tH-1, occ1_t0, ..., occ2_tH-1]
     X = np.array([
-        [price_dict[s]] +
-        [occ_dict[1,s]] +
-        [occ_dict[2,s]]
+        [price_dict[t, s] for t in range(horizon)] +
+        [occ_dict[1, t, s] for t in range(horizon)] +
+        [occ_dict[2, t, s] for t in range(horizon)]
         for s in range(scenarios_to_generate)
     ])
 
     scaler   = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
-    km = KMeans(n_clusters=n_clusters, n_init=10, random_state=42)
+    km = KMeans(n_clusters=n_clusters, n_init=5, random_state=42)
     km.fit(X_scaled)
 
     labels        = km.labels_
@@ -140,10 +147,10 @@ def cluster_scenarios(price_dict, occ_dict, n_clusters, scenarios_to_generate):
     occ_dict_clus     = {}
 
     for s in range(n_clusters):
-        # centroids[s] is a vector: [price, occ1, occ2]
-        price_dict_clus[s]   = float(centroids[s, 0])
-        occ_dict_clus[1, s]  = float(max(0.0, centroids[s, 1]))
-        occ_dict_clus[2, s]  = float(max(0.0, centroids[s, 2]))
+        for t in range(horizon):
+            price_dict_clus[t, s]   = float(centroids[s, t])
+            occ_dict_clus[1, t, s]  = float(max(0.0, centroids[s, horizon + t]))
+            occ_dict_clus[2, t, s]  = float(max(0.0, centroids[s, 2*horizon + t]))
 
     return price_dict_clus, occ_dict_clus, probabilities
 
@@ -151,7 +158,7 @@ def cluster_scenarios(price_dict, occ_dict, n_clusters, scenarios_to_generate):
 # 5. PYOMO MILP MODEL  (2-stage SP)
 # =============================================================================
 
-def build_sp_model(state, price_dict_clus, occ_dict_clus, n_clus, probabilities):
+def build_sp_model(state, price_dict_clus, occ_dict_clus, horizon, n_clus, probabilities):
     """
     Build the 2-stage stochastic MILP for the SP policy.
 
@@ -172,28 +179,54 @@ def build_sp_model(state, price_dict_clus, occ_dict_clus, n_clus, probabilities)
 
     d      = DATA    
     _num_timeslots = int(d['num_timeslots'])
+    eps = 10e-6
 
     m = ConcreteModel()
 
     # ── Sets ──────────────────────────────────────────────────────────────────
     m.R   = Set(initialize=[1, 2])
+    m.T   = Set(initialize=list(range(horizon)))
     m.S   = Set(initialize=list(range(n_clus)))
-    m.T = Set(initialize=[state["current_time"], state["current_time"] + 1])
     m.RTS = m.R * m.T * m.S
     m.TS  = m.T * m.S
-    m.RS = m.R * m.S
     # ── Current real state ────────────────────────────────────────────────────
     v_prev = 1 if state['vent_counter'] > 0 else 0
+    vc     = int(state['vent_counter'])
+
     m.Tinit    = Param(m.R, initialize={1: state['T1'],
                                         2: state['T2']})
     m.Hinit    = Param(initialize=state['H'])
     m.VentInit = Param(initialize=v_prev)
      # ── Scenario parameters ───────────────────────────────────────────────────
-    m.O      = Param(m.RS, initialize=occ_dict_clus)
-    m.prices = Param(m.T, m.S, initialize=price_dict_clus)
+# Inizializzazione dinamica dell'occupazione
+    def occ_init_rule(m, r, t, s):
+        if t == 0:
+            # Al tempo presente usiamo l'occupazione REALE dello state
+            return float(state['Occ1'] if r == 1 else state['Occ2'])
+        else:
+            # Al tempo futuro usiamo il dato del cluster (tornando indietro all'indice relativo)
+            return occ_dict_clus[r, t, s]
+            
+    m.O = Param(m.RTS, rule=occ_init_rule)
+
+
+    # Inizializzazione dinamica dei prezzi
+    def price_init_rule(m, t, s):
+        if t == 0:
+            # Prezzo REALE attuale
+            return float(state['price_t'])
+        else:
+            # Prezzo futuro del cluster
+            return price_dict_clus[t, s]
+            
+    m.prices = Param(m.TS, rule=price_init_rule)
     m.pi     = Param(m.S,   initialize={s: float(probabilities[s])
                                         for s in range(n_clus)})
-    m.Tout = Param(m.T, initialize={t: d['outdoor_temperature'][t] for t in m.T})
+    m.Tout = Param(m.T, initialize={
+        t: d['outdoor_temperature'][(state['current_time'] + t) % _num_timeslots]
+        for t in range(horizon)
+    })
+
     # ── Physical constants ────────────────────────────────────────────────────
     m.Pr     = Param(initialize=d['heating_max_power'])
     m.Pvent  = Param(initialize=d['ventilation_power'])
@@ -208,10 +241,10 @@ def build_sp_model(state, price_dict_clus, occ_dict_clus, n_clus, probabilities)
     m.Tok    = Param(initialize=d['temp_OK_threshold'])
     m.Thigh  = Param(initialize=d['temp_max_comfort_threshold'])
     m.Hhigh  = Param(initialize=d['humidity_threshold'])
-    m.L = Param(initialize=len(m.T))  # number of lookahead steps (for vent inertia)
+    m.L      = Param(initialize=horizon)
     m.M_temp = Param(initialize=100)
     m.M_hum  = Param(initialize=100)
-    m.U_vent = Param(initialize=d['vent_min_up_time'])
+    m.U_vent = Param(initialize=3)
 
     # ── Decision variables ────────────────────────────────────────────────────
     m.Vent   = Var(m.TS,  domain=Binary)
@@ -229,83 +262,39 @@ def build_sp_model(state, price_dict_clus, occ_dict_clus, n_clus, probabilities)
     m.Hum  = Var(m.TS,  domain=NonNegativeReals)
 
     # ── Temperature dynamics ──────────────────────────────────────────────────
-# ── Temperature dynamics ──────────────────────────────────────────────────
     def temp_dynamics(m, r, t, s):
-        # Se t è il tempo iniziale corrente, la temperatura è già decisa (è m.Tinit).
-        # Non c'è una dinamica da calcolare in entrata, quindi saltiamo il vincolo.
-        if t == state["current_time"]:  
-            return Constraint.Skip 
-            
+        if t == 0:
+            return m.T_in[r, t, s] == m.Tinit[r]
+
+        tp      = t - 1
         r_other = 2 if r == 1 else 1
-        t_prev = t - 1  # Guardiamo all'ora precedente che ha causato lo stato attuale t
-        
-        if t_prev == state["current_time"]:  
-            # Se l'ora precedente era il presente reale, i dati storici sono certi e nel m.Tinit
-            T_past           = m.Tinit[r]
-            T_OtherRoom_past = m.Tinit[r_other]
-            occ_term         = state["Occ1"] if r == 1 else state["Occ2"]
-        else:
-            # Per i passi successivi nel futuro, usiamo le variabili calcolate dal modello a t-1
-            T_past           = m.T_in[r, t_prev, s]
-            T_OtherRoom_past = m.T_in[r_other, t_prev, s]
-            # Nota: usa l'indice corretto del dizionario dei cluster [r, s]
-            occ_term         = occ_dict_clus[r, s] 
-
-        # Le decisioni e il meteo che cambiano la temperatura tra t_prev e t
-        heat = m.Heat[r, t_prev, s]
-        vent = m.Vent[t_prev, s]
-        Tout = m.Tout[t_prev]
-
-        # Equazione dinamica (Bilancio energetico)
         return m.T_in[r, t, s] == (
-            T_past
-            + m.Zexch * (T_OtherRoom_past - T_past)
-            + m.Zloss * (Tout - T_past)  # Se Tout > T_past il sistema si scalda, coerente con il tuo +
-            + m.Zconv * heat
-            - m.Zcool * vent
-            + m.Zocc * occ_term
+            m.T_in[r, tp, s]
+            + m.Zexch * (m.T_in[r_other, tp, s] - m.T_in[r, tp, s])
+            + m.Zloss * (m.Tout[tp]               - m.T_in[r, tp, s])
+            + m.Zconv * m.Heat[r, tp, s]
+            - m.Zcool * m.Vent[tp, s]
+            + m.Zocc  * m.O[r, tp, s]
         )
-        
     m.TempDyn = Constraint(m.RTS, rule=temp_dynamics)
 
     # ── Humidity dynamics ─────────────────────────────────────────────────────
-# ── Humidity dynamics ─────────────────────────────────────────────────────
     def hum_dynamics(m, t, s):
-        # Se t è il tempo iniziale corrente, l'umidità è già decisa (è m.Hinit).
-        # Non c'è una dinamica in entrata da calcolare, quindi saltiamo il vincolo.
-        if t == state["current_time"]:
-            return Constraint.Skip
-
-        t_prev = t - 1  # L'ora precedente che determina lo stato attuale t
-
-        if t_prev == state["current_time"]:
-            # Se l'ora precedente era il presente reale, usiamo i dati storici certi dello state
-            H_past   = m.Hinit
-            occ_term = state["Occ1"] + state["Occ2"]
-        else:
-            # Per i passi successivi nel futuro, usiamo le variabili e i parametri dello scenario s
-            H_past   = m.Hum[t_prev, s]
-            # Assicurati che m.O sia indicizzato correttamente (es. m.O[stanza, scenario])
-            # Se m.O ha anche l'indice temporale nel tuo modello, usa m.O[1, t_prev, s]
-            occ_term = occ_dict_clus[1, s] + occ_dict_clus[2, s]
-
-        # La decisione di ventilazione presa a t_prev che influisce sul tempo t
-        vent = m.Vent[t_prev, s]
-
-        # Equazione dinamica dell'umidità
+        if t == 0:
+            return m.Hum[t, s] == m.Hinit
+        tp = t - 1
         return m.Hum[t, s] == (
-            H_past
-            - m.Hvent * vent
-            + m.Hocc  * occ_term
+            m.Hum[tp, s]
+            - m.Hvent * m.Vent[tp, s]
+            + m.Hocc  * (m.O[1, tp, s] + m.O[2, tp, s])
         )
-
     m.HumDyn = Constraint(m.TS, rule=hum_dynamics)
     # ── Overrule controller: LOW temperature ──────────────────────────────────
 
     # ── 1. High temperature: forced heating shutdown ──────────────────────────
     # y_high = 1  ⟺  T_in > Thigh
     m.CThigh1 = Constraint(m.RTS,
-        rule=lambda m, r, t, s: m.T_in[r, t, s] >= m.Thigh - m.M_temp * (1 - m.y_high[r, t, s]))
+        rule=lambda m, r, t, s: m.T_in[r, t, s] >= eps + m.Thigh - m.M_temp * (1 - m.y_high[r, t, s]))
     m.CThigh2 = Constraint(m.RTS,
         rule=lambda m, r, t, s: m.T_in[r, t, s] <= m.Thigh + m.M_temp * m.y_high[r, t, s])
     m.CHeatOff = Constraint(m.RTS,
@@ -316,7 +305,7 @@ def build_sp_model(state, price_dict_clus, occ_dict_clus, n_clus, probabilities)
     m.CTlow1 = Constraint(m.RTS,
         rule=lambda m, r, t, s: m.T_in[r, t, s] <= m.Tmin + m.M_temp * (1 - m.y_low[r, t, s]))
     m.CTlow2 = Constraint(m.RTS,
-        rule=lambda m, r, t, s: m.T_in[r, t, s] >= m.Tmin - m.M_temp * m.y_low[r, t, s])
+        rule=lambda m, r, t, s: m.T_in[r, t, s] >= eps + m.Tmin - m.M_temp * m.y_low[r, t, s])
 
       # ── 3. Temperature-OK: overrule deactivation ──────────────────────────────
     # y_ok = 1  ⟺  T_in >= Tok
@@ -332,7 +321,7 @@ def build_sp_model(state, price_dict_clus, occ_dict_clus, n_clus, probabilities)
 
     # u <= u_prev + y_low  
     def c_u2(m, r, t, s):
-        u_prev = state[f'low_override_r{r}']if t == state["current_time"] else m.u[r, t - 1, s]
+        u_prev = state[f'low_override_r{r}']if t == 0 else m.u[r, t - 1, s]
         return m.u[r, t, s] <= u_prev + m.y_low[r, t, s]
     m.CU2 = Constraint(m.RTS, rule=c_u2)
 
@@ -342,7 +331,7 @@ def build_sp_model(state, price_dict_clus, occ_dict_clus, n_clus, probabilities)
 
     # u >= u_prev - y_ok  
     def c_u3(m, r, t, s):
-        u_prev = state[f'low_override_r{r}'] if t == state["current_time"] else m.u[r, t - 1, s]
+        u_prev = state.get(f'low_override_r{r}', 0) if t == 0 else m.u[r, t - 1, s]
         return m.u[r, t, s] >= u_prev - m.y_ok[r, t, s]
     m.CU3 = Constraint(m.RTS, rule=c_u3)
 
@@ -356,7 +345,7 @@ def build_sp_model(state, price_dict_clus, occ_dict_clus, n_clus, probabilities)
 
     # ── Startup signal ──────────
     def c_vstart1(m, t, s):
-        v_p = m.VentInit if t == state["current_time"] else m.Vent[t - 1, s]
+        v_p = m.VentInit if t == 0 else m.Vent[t - 1, s]
         return m.Vstart[t, s] >= m.Vent[t, s] - v_p
     m.CVstart1 = Constraint(m.TS, rule=c_vstart1)
 
@@ -364,7 +353,7 @@ def build_sp_model(state, price_dict_clus, occ_dict_clus, n_clus, probabilities)
         rule=lambda m, t, s: m.Vstart[t, s] <= m.Vent[t, s])
 
     def c_vstart3(m, t, s):
-        v_p = m.VentInit if t == state["current_time"] else m.Vent[t - 1, s]
+        v_p = m.VentInit if t == 0 else m.Vent[t - 1, s]
         return m.Vstart[t, s] <= 1 - v_p
     m.CVstart3 = Constraint(m.TS, rule=c_vstart3)
 
@@ -385,13 +374,13 @@ def build_sp_model(state, price_dict_clus, occ_dict_clus, n_clus, probabilities)
     def heat_na(m, r, s1, s2):
         if s1 >= s2:
             return Constraint.Skip
-        return m.Heat[r, state["current_time"], s1] == m.Heat[r, state["current_time"], s2]
+        return m.Heat[r, 0, s1] == m.Heat[r, 0, s2]
     m.HeatNA = Constraint(m.R, m.S, m.S, rule=heat_na)
 
     def vent_na(m, s1, s2):
         if s1 >= s2:
             return Constraint.Skip
-        return m.Vent[state["current_time"], s1] == m.Vent[state["current_time"], s2]
+        return m.Vent[0, s1] == m.Vent[0, s2]
     m.VentNA = Constraint(m.S, m.S, rule=vent_na)
 
     # =========================================================================
@@ -434,25 +423,73 @@ def SP_policy(state):
     -------
     dict with keys 'heat_r1', 'heat_r2', 'vent'
     """
+    # def debug_print_state(state):
+    #     print("Debug incoming state:")
+    #     for k, v in state.items():
+    #         print(f"  {k}: {v}")
+    
+    #print(debug_print_state(state))
+
+    # Make scenario generation reproducible per (day, timestep)
+    #rng = np.random.default_rng(seed=int(state['current_time']) + 100)
+
+    # rng = np.random.default_rng(seed=42 + state['current_time'])
+
+    t         = state['current_time']
+    remaining = DATA['num_timeslots'] - t
+    horizon   = min(HORIZON, remaining)
+
+    # if horizon <= 0:
+    #     return {'heat_r1': 0.0, 'heat_r2': 0.0, 'vent': 0}
+
+    # # Handle missing previous price at t = 0
+    # p_prev = state.get('price_previous') or 4.0
+
+    # # Ventilation status: vent_counter > 0 means vent was ON last step
+    # vc       = state.get('vent_counter', 0)
+    # v_status = 1 if vc > 0 else 0
     price_dict, occ_dict = generate_scenarios(state["price_t"], state["price_previous"],
                        state["Occ1"], state["Occ2"],
-                       n_scenarios=GEN_SCENARIOS)
+                       horizon, n_scenarios = GEN_SCENARIOS)
 
-    price_dict_clus, occ_dict_clus, probabilities = cluster_scenarios(price_dict, occ_dict, N_CLUSTERS, scenarios_to_generate = GEN_SCENARIOS)
+    price_dict_clus, occ_dict_clus, probabilities = cluster_scenarios(price_dict, occ_dict, N_SCENARIOS, horizon, scenarios_to_generate = GEN_SCENARIOS)
+        # if clustered is None
+        # # ── Generate raw Monte-Carlo scenarios ────────────────────────────────────
+        # price_dict, occ_dict = generate_scenarios(
+        #     price_now   = state['price_t'],
+        #     price_prev  = state['price_previous'],
+        #     occ_r1_now  = state['Occ1'],
+        #     occ_r2_now  = state['Occ2'],
+        #     horizon     = horizon,
+        #     n_scenarios = GEN_SCENARIOS
+        # )
 
-    # Build full price dict indexed by (t, s): at t = now use observed price, at t+1 use clustered price
-    t0 = state["current_time"]
-    t1 = t0 + 1
-    price_matrix = {}
-    for s in range(len(probabilities)):
-        price_matrix[(t0, s)] = float(state['price_t'])
-        # price_dict_clus currently maps s -> clustered future price
-        price_matrix[(t1, s)] = float(price_dict_clus[s])
+        # # ── Cluster to N_SCENARIOS representative centroids ───────────────────────
+        # n_clus = min(N_SCENARIOS, GEN_SCENARIOS)
+        # price_dict_clus, occ_dict_clus, probabilities = cluster_scenarios(
+        #         price_dict, occ_dict,
+        #         n_clusters            = n_clus,
+        #         horizon               = horizon,
+        #         scenarios_to_generate = GEN_SCENARIOS,
+            # )
+    # else:
+    n_clus = len(probabilities)
+
+    # ── Assemble current state for the MILP ──────────────────────────────────
+    # milp_state = {
+    #     'T_in_r1'        : state['T1'],
+    #     'T_in_r2'        : state['T2'],
+    #     'humidity'       : state['H'],
+    #     'vent_prev'      : v_status,
+    #     'vent_on_count'  : vc,
+    #     'low_override_r1': state.get('low_override_r1', 0),
+    #     'low_override_r2': state.get('low_override_r2', 0),
+    # }
 
     # ── Build and solve ───────────────────────────────────────────────────────
     model  = build_sp_model(state,
-                            price_matrix, occ_dict_clus,
-                            N_CLUSTERS, probabilities)
+                            price_dict_clus, occ_dict_clus,
+                            horizon, n_clus, probabilities)
     solver = SolverFactory('gurobi_direct')
     result = solver.solve(model, tee=False)
 
@@ -469,9 +506,9 @@ def SP_policy(state):
 
     # ── Extract here-and-now decisions (non-anticipativity → s=0 is canonical)
     s0 = 0
-    p1 = float(value(model.Heat[1, state["current_time"], s0]))
-    p2 = float(value(model.Heat[2, state["current_time"], s0]))
-    v  = int(round(float(value(model.Vent[state["current_time"], s0]))))
+    p1 = float(value(model.Heat[1, 0, s0]))
+    p2 = float(value(model.Heat[2, 0, s0]))
+    v  = int(round(float(value(model.Vent[0, s0]))))
 
 
 
