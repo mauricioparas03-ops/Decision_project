@@ -12,13 +12,13 @@ from Data.OccupancyProcessRestaurant import next_occupancy_levels
 from Data.v2_SystemCharacteristics import get_fixed_data
 
 # HYPERPARAMETERS & SETTINGS
-N_SAMPLES = 80
-K_SCENARIOS = 15
-K_SCENARIOS_BACKWARD = 30 
-ITERATIONS_I = 20
+N_SAMPLES = 120
+K_SCENARIOS = 50
+K_SCENARIOS_BACKWARD = 100
+ITERATIONS_I = 80
 T_HOURS = 10
 SWEEPS_J = 6
-BETA = 0.25
+BETA = 0.15
 
 data = get_fixed_data()
 feature_cols = [

@@ -6,7 +6,7 @@ from policies.multiSP import select_action
 #from policies.SP_policy import select_action
 #from policies.multiSP import select_action
 from policies.ADP_policy import select_action
-#from policies.Hybrid_ADP_policy import select_action
+#from policies.Hybrid_multi_and_adp import select_action
 
 from Data.v2_SystemCharacteristics import get_fixed_data
 import pandas as pd

@@ -55,12 +55,16 @@ def select_action(state):
     # OVERRULE FOR CURRENT STEP (t)
     if state['T1'] > data['temp_max_comfort_threshold']:
         m.p1.fix(0)
-    elif state['T1'] < data['temp_min_comfort_threshold'] and state['low_override_r1'] == 1:
+    elif state['low_override_r1'] == 1 and state['T1'] < data['temp_OK_threshold']:
+        m.p1.fix(data['heating_max_power'])
+    elif state['T1'] < data['temp_min_comfort_threshold']:
         m.p1.fix(data['heating_max_power'])
 
     if state['T2'] > data['temp_max_comfort_threshold']:
         m.p2.fix(0)
-    elif state['T2'] < data['temp_min_comfort_threshold'] and state['low_override_r2'] == 1:
+    elif state['low_override_r2'] == 1 and state['T2'] < data['temp_OK_threshold']:
+        m.p2.fix(data['heating_max_power'])
+    elif state['T2'] < data['temp_min_comfort_threshold']:
         m.p2.fix(data['heating_max_power'])
 
     if state['H'] > data['humidity_threshold'] or state['vent_counter'] in [1, 2]:
@@ -131,7 +135,7 @@ def select_action(state):
     if t < 9:
         w = VFA_WEIGHTS[t+1]
         
-        K_POLICY = 15
+        K_POLICY = 50
         scen_data = []
         for _ in range(K_POLICY):
             sc_p = price_model(state['price_t'], state['price_previous'])
