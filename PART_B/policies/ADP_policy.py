@@ -52,7 +52,7 @@ def select_action(state):
     m.H_next = Var()
     m.vent_counter_next = Var(domain=NonNegativeReals)
 
-    # OVERRULE FOR CURRENT STEP (Ora t)
+    # OVERRULE FOR CURRENT STEP (t)
     if state['T1'] > data['temp_max_comfort_threshold']:
         m.p1.fix(0)
     elif state['T1'] < data['temp_min_comfort_threshold'] and state['low_override_r1'] == 1:
@@ -99,13 +99,13 @@ def select_action(state):
     m.c_yok_r1_b = Constraint(expr=m.T1_next <= data['temp_OK_threshold'] + M*m.y_ok_r1_next)
 
     u_prev_r1 = state['low_override_r1']
-    # NOMI AGGIORNATI: Logica di Isteresi (Memoria del termostato)
+
     m.c_force_override_ON_if_cold_r1     = Constraint(expr=m.ov1_next >= m.y_low_r1_next)
     m.c_prevent_override_without_cold_r1 = Constraint(expr=m.ov1_next <= u_prev_r1 + m.y_low_r1_next)
     m.c_keep_override_ON_until_ok_r1     = Constraint(expr=m.ov1_next >= u_prev_r1 - m.y_ok_r1_next)
     m.c_force_override_OFF_if_ok_r1      = Constraint(expr=m.ov1_next <= 1 - m.y_ok_r1_next)
 
-    # --- Room 2 ---
+    # Room 2
     m.y_low_r2_next = Var(domain=Binary)
     m.y_ok_r2_next = Var(domain=Binary)
     m.ov2_next = Var(domain=Binary)
@@ -117,7 +117,6 @@ def select_action(state):
     m.c_yok_r2_b = Constraint(expr=m.T2_next <= data['temp_OK_threshold'] + M*m.y_ok_r2_next)
 
     u_prev_r2 = state['low_override_r2']
-    # NOMI AGGIORNATI: Logica di Isteresi (Memoria del termostato)
     m.c_force_override_ON_if_cold_r2     = Constraint(expr=m.ov2_next >= m.y_low_r2_next)
     m.c_prevent_override_without_cold_r2 = Constraint(expr=m.ov2_next <= u_prev_r2 + m.y_low_r2_next)
     m.c_keep_override_ON_until_ok_r2     = Constraint(expr=m.ov2_next >= u_prev_r2 - m.y_ok_r2_next)
