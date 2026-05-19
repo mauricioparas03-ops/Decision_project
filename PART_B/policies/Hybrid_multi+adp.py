@@ -16,7 +16,7 @@ N_CLUSTERS    = 3
 BRANCHING_FACTOR = 100
 
 # ── System Parameters ─────────────────────────────────
-DATA = get_fixed_data()
+data = get_fixed_data()
 
 # ── weights for the hybrid policy ─────────────────────────────────────────────
 
@@ -121,10 +121,45 @@ def get_descendant_chains(node_id, depth, nodes_map):
         for cc in child_chains:
             all_chains.append([node_id] + cc)
     return all_chains
+def vent_counter_expr(n, nodes_map, m, v_prev, U_vent):
+    """
+    Restituisce un'espressione Pyomo lineare per il vent_counter al nodo n.
+    Somma le variabili Vent lungo il percorso verso la root, fino a U_vent passi.
     
-def build_hybrid_model(state, tree, horizon):
-    d = DATA
+    Nota: è una somma (non conta solo i consecutivi) per restare lineare.
+    """
+    terms = []
+    current_id = n
+    steps = 0
 
+    while steps < U_vent:
+        if current_id not in nodes_map:
+            break
+
+        terms.append(m.Vent[current_id])
+        steps += 1
+
+        parent_id = nodes_map[current_id]['parent_id']
+
+        if parent_id not in nodes_map:          # il padre è la root
+            if steps < U_vent:
+                terms.append(m.Vent0)           # variabile simbolica Pyomo
+                steps += 1
+            if steps < U_vent:
+                terms.append(v_prev)            # costante (int 0/1)
+                steps += 1
+            break
+
+        current_id = parent_id
+
+    return sum(terms)
+    
+def build_hybrid_model(state):
+    d = data
+    t         = state['current_time']
+    remaining = d['num_timeslots'] - t
+    horizon   = min(HORIZON_MULTI, remaining)
+    tree = build_scenario_tree(state, horizon, S=BRANCHING_FACTOR, K=N_CLUSTERS)
     T_init = {1: state['T1'], 2: state['T2']}
     H_init = state['H']
     occ1_root = state['Occ1']
@@ -133,15 +168,15 @@ def build_hybrid_model(state, tree, horizon):
     vent_counter = int(state['vent_counter'])
     v_prev       = 1 if vent_counter > 0 else 0
     low_override = {}
-    for r, T_init_r, T_ok_threshold in [(1, state['T1'], DATA['temp_OK_threshold']),
-                                        (2, state['T2'], DATA['temp_OK_threshold'])]:
+    for r, T_init_r, T_ok_threshold in [(1, state['T1'], data['temp_OK_threshold']),
+                                        (2, state['T2'], data['temp_OK_threshold'])]:
         ov = state[f'low_override_r{r}']
         if T_init_r >= T_ok_threshold:
             ov = 0   # override già terminato
         low_override[r] = ov
     for r in [1, 2]:
         T_r = state[f'T{r}']
-        if T_r > DATA['temp_max_comfort_threshold']:
+        if T_r > data['temp_max_comfort_threshold']:
             low_override[r] = 0 
     eps = 10e-6
     # ── Node sets ─────────────────────────────────────────────────────────────
@@ -176,7 +211,6 @@ def build_hybrid_model(state, tree, horizon):
     m.R      = Set(initialize=[1, 2])
     m.N = Set(initialize=non_root_ids)
     m.RN = Set(initialize = m.R* m.N)
-    m.leaf = Set(initialize=leaf_ids)
 
     
     m.Pr     = Param(initialize=d['heating_max_power'])
@@ -409,17 +443,64 @@ def build_hybrid_model(state, tree, horizon):
 
     # Humidity threshold forces ventilation
     m.c_hum_limit = Constraint(m.N, rule=lambda m, n: m.Hum[n] <= m.Hhigh + m.M_hum * m.Vent[n])
+    
 
 
     # ── 5. Objective: Minimize Expected Cost ──────────────────────────────────
     def obj_rule(m):
         # Total cost = Sum over all nodes (Prob_node * Cost_node)
-        return sum(
+        running_cost_nodes = sum(
             nodes_map[n]['probability'] * (
                 m.prices[n] * sum(m.Heat[r, n] for r in m.R) +
                 m.prices[n] * m.Pvent * m.Vent[n]
             ) for n in m.N 
-        ) + state['price_t'] * (m.Heat0[1] + m.Heat0[2] + m.Pvent * m.Vent0)
+        )
+        immediate_cost_root = state['price_t'] * (m.Heat0[1] + m.Heat0[2] + m.Pvent * m.Vent0)
+        vfa_term = 0.0
+        t_vfa = state["current_time"] + horizon  # Il tempo futuro in cui si trovano le foglie
+        
+        if t_vfa < 9:
+            w = VFA_WEIGHTS[t_vfa]
+            
+            for n in leaf_ids:
+                prob = nodes_map[n]['probability']
+                p_id = nodes_map[n]['parent_id']
+                
+                # Recupero dati esogeni del ramo per la normalizzazione
+                price_t1 = nodes_map[n]['price']
+                price_prev = nodes_map[p_id]['price'] if p_id != root_id else state['price_t']
+                occ1_2 = nodes_map[n]['occupancy1']
+                occ2_2 = nodes_map[n]['occupancy2']
+                
+                # Approssimazione lineare del vent_counter sulla foglia basata sul tempo minimo hardware
+                vc_expr = vent_counter_expr(n, nodes_map, m, v_prev, int(value(m.U_vent)))
+
+                # Equazione VFA lineare normalizzata
+                node_vfa = (
+                    w['intercept'] + 
+                    w['T1'] * ((m.T_in[1, n] - 22.0) / 8.0) + 
+                    w['T2'] * ((m.T_in[2, n] - 22.0) / 8.0) + 
+                    w['H'] * ((m.Hum[n] - 40.0) / 40.0) +
+                    w['vent_counter'] * (vc_expr / 3.0) + 
+                    w['low_override_r1'] * m.u[1, n] + 
+                    w['low_override_r2'] * m.u[2, n] + 
+                    w['price_t'] * (price_t1 / 10.0) +
+                    w['price_previous'] * (price_prev / 10.0) +  
+                    w['Occ1'] * ((occ1_2 - 20.0) / 30.0) + 
+                    w['Occ2'] * ((occ2_2 - 10.0) / 20.0)
+                )
+                # Somma pesata per la probabilità dello scenario
+                vfa_term += prob * node_vfa
+        else:
+            vfa_term = 0.0
+        return immediate_cost_root + running_cost_nodes + vfa_term
     m.obj = Objective(rule=obj_rule, sense=minimize)
 
-    return m 
+    SolverFactory('gurobi').solve(m, tee=False)
+
+    return {"HeatPowerRoom1": value(m.Heat0[1]),
+            "HeatPowerRoom2": value(m.Heat0[2]),
+            "VentilationON": int(value(m.Vent0))}
+def select_action(state):
+    decisions = build_hybrid_model(state)
+    return {'HeatPowerRoom1': decisions["HeatPowerRoom1"], 'HeatPowerRoom2': decisions["HeatPowerRoom2"], 'VentilationON': decisions["VentilationON"]}

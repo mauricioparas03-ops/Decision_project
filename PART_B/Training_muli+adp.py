@@ -536,9 +536,9 @@ def solve_bellman_equation_milp(state, next_t_weights):
 
     SolverFactory('gurobi').solve(m, tee=False)
 
-    return {"HeatPowerRoom1": value(m.p1),
-            "HeatPowerRoom2": value(m.p2),
-            "VentilationON": int(value(m.v))}
+    return {"HeatPowerRoom1": value(m.Heat0[1]),
+            "HeatPowerRoom2": value(m.Heat0[2]),
+            "VentilationON": int(value(m.Vent0))}
 
 # ============================================================================
 # 2. MATHEMATICAL FUNCTION (Used in Backward to calculate target on FIXED actions)
