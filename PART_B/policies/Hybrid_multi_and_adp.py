@@ -190,12 +190,12 @@ def vent_counter_expr(n, nodes_map, m, v_prev, U_vent):
 
         parent_id = nodes_map[current_id]['parent_id']
 
-        if parent_id not in nodes_map:          # il padre è la root
+        if parent_id not in nodes_map:         
             if steps < U_vent:
-                terms.append(m.Vent0)           # variabile simbolica Pyomo
+                terms.append(m.Vent0)           
                 steps += 1
             if steps < U_vent:
-                terms.append(v_prev)            # costante (int 0/1)
+                terms.append(v_prev)            
                 steps += 1
             break
 
@@ -221,7 +221,7 @@ def build_hybrid_model(state):
                                         (2, state['T2'], data['temp_OK_threshold'])]:
         ov = state[f'low_override_r{r}']
         if T_init_r >= T_ok_threshold:
-            ov = 0   # override già terminato
+            ov = 0  
         low_override[r] = ov
     for r in [1, 2]:
         T_r = state[f'T{r}']
@@ -229,11 +229,8 @@ def build_hybrid_model(state):
             low_override[r] = 0 
     eps = 10e-6
     # ── Node sets ─────────────────────────────────────────────────────────────
-    # Root è sempre il primo nodo del primo stage
     root_id = tree[0][0]['id']
 
-    # 1. Creiamo un dizionario piatto per accesso rapido: id_globale -> dati_nodo
-    # Questo risolve il problema "tree[stage][nid]" che non funzionerebbe
     nodes_map = {
         node['id']: node
         for stage in tree
@@ -241,18 +238,15 @@ def build_hybrid_model(state):
         if node['id'] != root_id
     }
 
-    # 2. Definiamo i set usando gli ID globali
     all_node_ids = list(nodes_map.keys())
 
-    # Foglie: nodi che non hanno figli
     leaf_ids = [nid for nid, node in nodes_map.items() if not node['children']]
 
-    # Solo i nodi dopo la root
     non_root_ids = [nid for nid in all_node_ids if nid != root_id]
 
     decision_ids = non_root_ids
 
-    # Set per Pyomo
+    # Set for Pyomo
 
     m = ConcreteModel()
 
@@ -375,18 +369,17 @@ def build_hybrid_model(state):
     # Dynamics: Child node state = f(Parent state, Parent decision)
     def thermal_dynamics_rule(m, r, n):
         p_id = nodes_map[n]['parent_id']
-        tau_n = node_stage[n]          # stage del nodo corrente
+        tau_n = node_stage[n]          
         r_other = 2 if r == 1 else 1
         t = state["current_time"] + node_stage[p_id]
 
-        if tau_n == 1:  # nodo subito dopo root
+        if tau_n == 1:  
             occ_term = occ1_root if r == 1 else occ2_root
             T_parent = T_init[r]
             T_other_parent = T_init[r_other]
             heat_parent = m.Heat0[r]
             vent_parent = m.Vent0
         else:
-            # per gli altri stage usa occupazione del parent (o del nodo, se preferisci)
             occ_term = m.O1[p_id] if r == 1 else m.O2[p_id]
             T_parent = m.T_in[r, p_id]
             T_other_parent = m.T_in[r_other, p_id]
@@ -405,13 +398,12 @@ def build_hybrid_model(state):
 
     def humidity_dynamics_rule(m, n):        
         p_id = nodes_map[n]['parent_id']
-        tau_n = node_stage[n]          # stage del nodo corrente
-        if tau_n == 1:  # nodo subito dopo root
+        tau_n = node_stage[n]         
+        if tau_n == 1:  
             occ_term = occ1_root + occ2_root
             H_parent = H_init
             vent_parent = m.Vent0
         else:
-            # per gli altri stage usa occupazione del parent (o del nodo, se preferisci)
             occ_term = m.O1[p_id] + m.O2[p_id]
             H_parent = m.Hum[p_id]
             vent_parent = m.Vent[p_id]
@@ -506,7 +498,7 @@ def build_hybrid_model(state):
         )
         immediate_cost_root = state['price_t'] * (m.Heat0[1] + m.Heat0[2] + m.Pvent * m.Vent0)
         vfa_term = 0.0
-        t_vfa = state["current_time"] + horizon  # Il tempo futuro in cui si trovano le foglie
+        t_vfa = state["current_time"] + horizon  
         
         if t_vfa <= 9:
             w = VFA_WEIGHTS[t_vfa]
@@ -515,16 +507,13 @@ def build_hybrid_model(state):
                 prob = nodes_map[n]['probability']
                 p_id = nodes_map[n]['parent_id']
                 
-                # Recupero dati esogeni del ramo per la normalizzazione
                 price_t1 = nodes_map[n]['price']
                 price_prev = nodes_map[p_id]['price'] if p_id != root_id else state['price_t']
                 occ1_2 = nodes_map[n]['occupancy1']
                 occ2_2 = nodes_map[n]['occupancy2']
                 
-                # Approssimazione lineare del vent_counter sulla foglia basata sul tempo minimo hardware
                 vc_expr = vent_counter_expr(n, nodes_map, m, v_prev, int(value(m.U_vent)))
 
-                # Equazione VFA lineare normalizzata
                 node_vfa = (
                     w['intercept'] + 
                     w['T1'] * ((m.T_in[1, n] - 22.0) / 8.0) + 
@@ -538,7 +527,6 @@ def build_hybrid_model(state):
                     w['Occ1'] * ((occ1_2 - 20.0) / 30.0) + 
                     w['Occ2'] * ((occ2_2 - 10.0) / 20.0)
                 )
-                # Somma pesata per la probabilità dello scenario
                 vfa_term += prob * node_vfa
         else:
             vfa_term = 0.0
