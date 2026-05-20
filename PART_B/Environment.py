@@ -1,23 +1,20 @@
 from EnvFunctions import apply_dynamics, check_feasibility
 from policies.dummy_policy import select_action as dummy_action
-from policies.multiSP import select_action
-
-policy_name = "SP" #choose from : "dummy", "lookahead", "SP", "multiSP1", "Hybrid_multi_and_adp", "ADP"
-
 #from policies.dummy_policy import select_action
 #from policies.lookahead_policy import select_action
-from policies.SP_policy import select_action
+#from policies.SP_policy import select_action
 #from policies.ADP_policy import select_action
 #from policies.multiSP import select_action
-#from policies.Hybrid_multi_and_adp import select_action
-
-
+from policies.Hybrid_multi_and_adp import select_action
 
 from Data.v2_SystemCharacteristics import get_fixed_data
 import pandas as pd
 from pathlib import Path
 import numpy as np
 from v2_Checks import check_and_sanitize_action
+
+policy_name = "Hybrid_multi_and_adp" #choose from : "dummy", "lookahead", "SP", "multiSP1", "Hybrid_multi_and_adp", "ADP"
+
 
 data_dir    = Path(__file__).resolve().parent / "Data"
 outputs_dir = Path(__file__).resolve().parent / "outputs"
