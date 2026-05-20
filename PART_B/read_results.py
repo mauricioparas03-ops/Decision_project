@@ -6,26 +6,26 @@ from pathlib import Path
 outputs_dir = Path(__file__).resolve().parent / "outputs"
 outputs_dir.mkdir(exist_ok=True)
 
-policies = ["dummy", "lookahead", "SP", "multiSP", "hindsight"]
+policies = ["dummy", "lookahead", "SP", "multiSP1", "hindsight", "Hybrid_multi_and_adp", "ADP"]  # List of policy identifiers to load results for
 
 policy_labels = {
     "dummy":     "Dummy",
     "lookahead": "Det. Lookahead",
     "SP":        "2-Stage SP",
-    "multiSP":   "Multi-Stage SP",
+    "multiSP1":   "Multi-Stage SP",
     "hindsight": "Opt. Hindsight",
     "ADP":       "ADP",
-    "hybrid":    "Hybrid",
+    "Hybrid_multi_and_adp":    "Hybrid",
 }
 
 colors = {
     "dummy":     "#B4B2A9",
     "lookahead": "#85B7EB",
     "SP":        "#378ADD",
-    "multiSP":   "#5DCAA5",
+    "multiSP1":   "#5DCAA5",
     "hindsight": "#639922",
     "ADP":       "#EF9F27",
-    "hybrid":    "#D85A30",
+    "Hybrid_multi_and_adp":    "#D85A30",
 }
 
 results = {}

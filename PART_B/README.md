@@ -9,12 +9,12 @@ The only file you need to interact with is [Environment.py](Environment.py).
 At the top of `Environment.py`, uncomment the import for the policy you want to evaluate and comment out the others:
 
 ```python
-# from policies.dummy_policy       import select_action   # Dummy (baseline)
-# from policies.lookahead_policy   import select_action   # Deterministic Lookahead
-# from policies.SP_policy          import select_action   # 2-Stage Stochastic 
-# from policies.multiSP            import select_action   # Multi-Stage SP
-# from policies.ADP_policy         import select_action   # ADP
-# from policies.Hybrid_ADP_policy  import select_action   # Hybrid ADP
+# from policies.dummy_policy          import select_action   # Dummy (baseline)
+# from policies.lookahead_policy      import select_action   # Deterministic Lookahead
+# from policies.SP_policy             import select_action   # 2-Stage Stochastic 
+# from policies.multiSP               import select_action   # Multi-Stage SP
+# from policies.ADP_policy            import select_action   # ADP
+# from policies.Hybrid_multi_and_adp  import select_action   # Hybrid ADP
 ```
 
 ### 2. Set the policy name
@@ -22,7 +22,7 @@ At the top of `Environment.py`, uncomment the import for the policy you want to 
 Near the bottom of `Environment.py`, update `policy_name` to match the policy you selected:
 
 ```python
-policy_name = "multiSP"   # change to: dummy | lookahead | SP | multiSP | ADP | hybrid | hindsight
+policy_name = "multiSP"   # change to: dummy | lookahead | SP | multiSP | ADP | Hybrid_multi_and_adp | hindsight
 ```
 
 This name is used for the output file — make sure it matches one of the keys recognised by `read_results.py` (see table below).
@@ -43,7 +43,7 @@ The script runs 100 simulated days and saves the results to `outputs/results_<po
 Once you have generated `.npz` files for the policies you want to compare, open [read_results.py](read_results.py) and list them in the `policies` variable at the top:
 
 ```python
-policies = ["dummy", "lookahead", "SP", "multiSP", "hindsight"]
+policies = ["dummy", "lookahead", "SP", "multiSP", "hindsight", "Hybrid_multi_and_adp", "ADP"]
 ```
 
 Then run:
@@ -71,5 +71,7 @@ This prints a summary table and produces three figures, all saved to the `output
 | `SP` | `policies/SP_policy.py` | 2-stage stochastic program |
 | `multiSP` | `policies/multiSP.py` | Multi-stage stochastic program |
 | `ADP` | `policies/ADP_policy.py` | Approximate Dynamic Programming |
-| `hybrid` | `policies/Hybrid_ADP_policy.py` | Hybrid ADP |
+| `hybrid` | `policies/Hybrid_multi_and_adp.py` | Hybrid ADP |
 | `hindsight` | `Optimal_in_Hindsight.py` | Optimal in hindsight (lower bound) |
+
+

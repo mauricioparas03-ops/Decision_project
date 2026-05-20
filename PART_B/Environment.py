@@ -3,10 +3,10 @@ from policies.dummy_policy import select_action as dummy_action
 from policies.multiSP import select_action
 # from policies.dummy_policy import select_action
 # from policies.lookahead_policy import select_action
-#from policies.SP_policy import select_action
+# from policies.SP_policy import select_action
 #from policies.multiSP import select_action
-#from policies.ADP_policy import select_action
-from policies.Hybrid_ADP_policy import select_action
+from policies.multiSP import select_action
+#from policies.Hybrid_multi_and_adp import select_action
 
 from Data.v2_SystemCharacteristics import get_fixed_data
 import pandas as pd
@@ -125,7 +125,7 @@ for day in range(E_days):
 
 print(f"\nCost average over {E_days} days: {np.mean(daily_costs):.2f}", flush=True)
 
-policy_name = "multiSP"
+policy_name = "multiSP1"
 np.savez(
     outputs_dir / f"results_{policy_name}.npz",
     daily_costs         = daily_costs,

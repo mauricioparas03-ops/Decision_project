@@ -1,4 +1,6 @@
 import numpy as np
+import csv
+from pathlib import Path
 from pyomo.environ import *
 from sklearn.linear_model import Ridge  
 import matplotlib
@@ -10,9 +12,9 @@ from Data.OccupancyProcessRestaurant import next_occupancy_levels
 from Data.v2_SystemCharacteristics import get_fixed_data
 
 # HYPERPARAMETERS & SETTINGS
-N_SAMPLES = 80
+N_SAMPLES = 100
 K_SCENARIOS = 15
-K_SCENARIOS_BACKWARD = 30 
+K_SCENARIOS_BACKWARD = 30
 ITERATIONS_I = 20
 T_HOURS = 10
 SWEEPS_J = 6
@@ -38,16 +40,16 @@ vfa_weights = {}
 for t in range(T_HOURS):
     vfa_weights[t] = {}
     
-    # Inizializza tutte le feature a 0.0
+    # feature initialization
     for feat in feature_cols:
         vfa_weights[t][feat] = 0.0
         
-    # Aggiunge l'intercetta a 0.0
+    # intercept initialization
     vfa_weights[t]['intercept'] = 0.0
 
 
 # ============================================================================
-# 0. FUNZIONE DI NORMALIZZAZIONE (NUOVA)
+# NORMALIZATION FUNCTION
 # ============================================================================
 def get_normalized_features(state):
     """Normalizza gli stati per stabilizzare la regressione lineare"""
@@ -65,7 +67,7 @@ def get_normalized_features(state):
     }
 
 # ============================================================================
-# 1. MILP FUNCTION (FIXED)
+# 1. MILP FUNCTION
 # ============================================================================
 def solve_bellman_equation_milp(state, next_t_weights):
     
@@ -74,7 +76,7 @@ def solve_bellman_equation_milp(state, next_t_weights):
     m.p2 = Var(bounds=(0, data['heating_max_power']))
     m.v = Var(domain=Binary)
     
-    # Overrule stato corrente
+    # Overrule current state
     if state['T1'] > data['temp_max_comfort_threshold']:
         m.p1.fix(0)
     elif state['low_override_r1'] == 1 and state['T1'] < data['temp_OK_threshold']:
@@ -111,8 +113,8 @@ def solve_bellman_equation_milp(state, next_t_weights):
     expected_future_cost = 0
     tout = data['outdoor_temperature'][int(state['current_time'])]
     M = 500
-
-    # Dinamica fisica
+    eps = 1e-6
+    # dynamics constraints
     m.ct1 = Constraint(expr=
         m.T1_next == state['T1'] + data['heat_exchange_coeff']*(state['T2']-state['T1']) +
                      data['thermal_loss_coeff']*(tout-state['T1']) +
@@ -133,10 +135,10 @@ def solve_bellman_equation_milp(state, next_t_weights):
 
     m.c_vc = Constraint(expr=m.vc_next == (state['vent_counter'] + 1) * m.v)
 
-    # Overrule logica next state Room 1
+    # Overrule logic next state Room 1
     u_prev_r1 = state['low_override_r1']
     m.c_ylow_r1_a = Constraint(expr=m.T1_next <= data['temp_min_comfort_threshold'] + M*(1 - m.y_low_r1))
-    m.c_ylow_r1_b = Constraint(expr=m.T1_next >= data['temp_min_comfort_threshold'] - M*m.y_low_r1)
+    m.c_ylow_r1_b = Constraint(expr=m.T1_next >= data['temp_min_comfort_threshold'] + eps - M*m.y_low_r1)
     m.c_yok_r1_a  = Constraint(expr=m.T1_next >= data['temp_OK_threshold'] - M*(1 - m.y_ok_r1))
     m.c_yok_r1_b  = Constraint(expr=m.T1_next <= data['temp_OK_threshold'] + M*m.y_ok_r1)
     m.c_ov1_a = Constraint(expr=m.ov1_next >= m.y_low_r1)
@@ -144,10 +146,10 @@ def solve_bellman_equation_milp(state, next_t_weights):
     m.c_ov1_c = Constraint(expr=m.ov1_next >= u_prev_r1 - m.y_ok_r1)
     m.c_ov1_d = Constraint(expr=m.ov1_next <= 1 - m.y_ok_r1)
 
-    # Overrule logica next state Room 2
+    # Overrule logic next state Room 2
     u_prev_r2 = state['low_override_r2']
     m.c_ylow_r2_a = Constraint(expr=m.T2_next <= data['temp_min_comfort_threshold'] + M*(1 - m.y_low_r2))
-    m.c_ylow_r2_b = Constraint(expr=m.T2_next >= data['temp_min_comfort_threshold'] - M*m.y_low_r2)
+    m.c_ylow_r2_b = Constraint(expr=m.T2_next >= data['temp_min_comfort_threshold'] + eps - M*m.y_low_r2)
     m.c_yok_r2_a  = Constraint(expr=m.T2_next >= data['temp_OK_threshold'] - M*(1 - m.y_ok_r2))
     m.c_yok_r2_b  = Constraint(expr=m.T2_next <= data['temp_OK_threshold'] + M*m.y_ok_r2)
     m.c_ov2_a = Constraint(expr=m.ov2_next >= m.y_low_r2)
@@ -155,7 +157,7 @@ def solve_bellman_equation_milp(state, next_t_weights):
     m.c_ov2_c = Constraint(expr=m.ov2_next >= u_prev_r2 - m.y_ok_r2)
     m.c_ov2_d = Constraint(expr=m.ov2_next <= 1 - m.y_ok_r2)
 
-    # Valore futuro atteso
+    # future expected value
     if next_t_weights:
         for k in range(K_SCENARIOS):
             expected_future_cost += (1.0 / K_SCENARIOS) * (
@@ -209,7 +211,7 @@ def evaluate_fixed_action(state, action, next_weights):
         elif T2_n >= data['temp_OK_threshold']: ov2_n = 0
         else: ov2_n = state['low_override_r2']
 
-        # MODIFICA: Creazione dello stato futuro simulato per la normalizzazione
+
         next_state_sim = {
             'T1': T1_n, 
             'T2': T2_n, 
@@ -225,7 +227,7 @@ def evaluate_fixed_action(state, action, next_weights):
         
         norm_feats = get_normalized_features(next_state_sim)
 
-        # Linear approximation (usando le feature normalizzate)
+        # Linear approximation 
         vfa_k = (next_weights['intercept'] + 
                  next_weights['T1']*norm_feats['T1'] + 
                  next_weights['T2']*norm_feats['T2'] + 
@@ -300,7 +302,12 @@ for i in range(ITERATIONS_I):
                 Y_targets.append(target_value)
                 norm_feats = get_normalized_features(state_n)
                 X_features.append([norm_feats[feat] for feat in feature_cols])
-                        
+
+            print(f"    t={t}, Y mean={np.mean(Y_targets):.2f}, "
+              f"std={np.std(Y_targets):.2f}, "
+              f"min={np.min(Y_targets):.2f}, "
+              f"max={np.max(Y_targets):.2f}")
+                            
             if len(X_features) > 0:
                 regressor = Ridge(alpha=1.0, fit_intercept=True)
                 regressor.fit(X_features, Y_targets)
@@ -320,3 +327,20 @@ for t in range(T_HOURS):
     clean_weights = {k: round(float(v), 4) for k, v in vfa_weights[t].items()}
     print(f"    {t}: {clean_weights},")
 print("}")
+
+# Save VFA weights to CSV for later policy usage
+output_csv = Path(__file__).resolve().parent / "Data" / "vfa_weights.csv"
+output_csv.parent.mkdir(parents=True, exist_ok=True)
+
+csv_columns = ["t"] + feature_cols + ["intercept"]
+with open(output_csv, mode="w", newline="", encoding="utf-8") as f:
+    writer = csv.DictWriter(f, fieldnames=csv_columns)
+    writer.writeheader()
+    for t in range(T_HOURS):
+        row = {"t": t}
+        for feat in feature_cols:
+            row[feat] = float(vfa_weights[t][feat])
+        row["intercept"] = float(vfa_weights[t]["intercept"])
+        writer.writerow(row)
+
+print(f"Saved VFA weights to CSV: {output_csv}")
