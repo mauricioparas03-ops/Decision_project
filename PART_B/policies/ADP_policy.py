@@ -89,9 +89,9 @@ def select_action(state):
     # ==========================================
     # RIGOROUS OVERRIDE LOGIC FOR FUTURE 
     # ==========================================
-    M, eps = 500, 10e-6
+    M, eps = 500, 1e-6
     
-    # --- Room 1 ---
+    # Room 1
     m.y_low_r1_next = Var(domain=Binary)
     m.y_ok_r1_next = Var(domain=Binary)
     m.ov1_next = Var(domain=Binary)
@@ -135,7 +135,7 @@ def select_action(state):
     if t < 9:
         w = VFA_WEIGHTS[t+1]
         
-        K_POLICY = 50
+        K_POLICY = 15
         scen_data = []
         for _ in range(K_POLICY):
             sc_p = price_model(state['price_t'], state['price_previous'])
