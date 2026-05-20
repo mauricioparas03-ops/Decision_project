@@ -37,21 +37,21 @@ def load_vfa_weights_from_csv():
 
 # ── weights for the hybrid policy ─────────────────────────────────────────────
 
-#VFA_WEIGHTS = load_vfa_weights_from_csv()
+VFA_WEIGHTS = load_vfa_weights_from_csv()
 
 
-VFA_WEIGHTS = {
-    0: {'T1': 0.0, 'T2': 0.0, 'H': 0.0, 'price_t': 166.811, 'price_previous': -52.4137, 'Occ1': 2.3454, 'Occ2': -6.5845, 'vent_counter': 0.0, 'low_override_r1': 0.0, 'low_override_r2': 0.0, 'intercept': 81.7666},
-    1: {'T1': -3.6597, 'T2': -6.6471, 'H': 3.2715, 'price_t': 136.232, 'price_previous': 43.6886, 'Occ1': 0.4884, 'Occ2': -3.691, 'vent_counter': -3.1349, 'low_override_r1': 0.0, 'low_override_r2': 0.0, 'intercept': 45.5579},
-    2: {'T1': -17.8462, 'T2': -16.712, 'H': 17.0878, 'price_t': 94.55, 'price_previous': 60.9206, 'Occ1': 1.7097, 'Occ2': -1.4284, 'vent_counter': -14.5423, 'low_override_r1': 10.304, 'low_override_r2': 16.7219, 'intercept': 34.5378},
-    3: {'T1': -12.4565, 'T2': -10.464, 'H': 20.5213, 'price_t': 76.5996, 'price_previous': 53.3461, 'Occ1': 1.7842, 'Occ2': 0.6308, 'vent_counter': -14.0177, 'low_override_r1': 18.7843, 'low_override_r2': 24.1062, 'intercept': 34.9512},
-    4: {'T1': -7.7689, 'T2': -9.1995, 'H': 25.1733, 'price_t': 71.1307, 'price_previous': 47.4648, 'Occ1': -1.3999, 'Occ2': -2.4511, 'vent_counter': -5.531, 'low_override_r1': 17.9065, 'low_override_r2': 22.11, 'intercept': 27.4075},
-    5: {'T1': -10.7988, 'T2': -9.031, 'H': 25.8565, 'price_t': 58.8176, 'price_previous': 43.0421, 'Occ1': -4.0887, 'Occ2': -2.6151, 'vent_counter': 2.2132, 'low_override_r1': 17.9992, 'low_override_r2': 19.7543, 'intercept': 11.6112},
-    6: {'T1': -12.1684, 'T2': -10.1931, 'H': 17.439, 'price_t': 45.3847, 'price_previous': 33.2699, 'Occ1': -2.407, 'Occ2': 0.0989, 'vent_counter': 4.8596, 'low_override_r1': 14.7093, 'low_override_r2': 17.8049, 'intercept': 1.5964},
-    7: {'T1': -12.2613, 'T2': -11.4534, 'H': 12.7152, 'price_t': 33.5577, 'price_previous': 22.9294, 'Occ1': 3.7094, 'Occ2': 4.1436, 'vent_counter': 0.3337, 'low_override_r1': 17.4723, 'low_override_r2': 18.7128, 'intercept': -8.3538},
-    8: {'T1': -8.5566, 'T2': -9.4265, 'H': 14.9203, 'price_t': 30.1314, 'price_previous': 20.0247, 'Occ1': 0.7527, 'Occ2': 3.4089, 'vent_counter': 4.6502, 'low_override_r1': 14.0543, 'low_override_r2': 15.5494, 'intercept': -16.3612},
-    9: {'T1': -1.7524, 'T2': -2.5389, 'H': 5.123, 'price_t': 12.532, 'price_previous': 9.7659, 'Occ1': 1.0408, 'Occ2': -0.2031, 'vent_counter': 3.8551, 'low_override_r1': 13.4865, 'low_override_r2': 14.3706, 'intercept': -8.692},
-}
+# VFA_WEIGHTS = {
+#     0: {'T1': 0.0, 'T2': 0.0, 'H': 0.0, 'price_t': 166.811, 'price_previous': -52.4137, 'Occ1': 2.3454, 'Occ2': -6.5845, 'vent_counter': 0.0, 'low_override_r1': 0.0, 'low_override_r2': 0.0, 'intercept': 81.7666},
+#     1: {'T1': -3.6597, 'T2': -6.6471, 'H': 3.2715, 'price_t': 136.232, 'price_previous': 43.6886, 'Occ1': 0.4884, 'Occ2': -3.691, 'vent_counter': -3.1349, 'low_override_r1': 0.0, 'low_override_r2': 0.0, 'intercept': 45.5579},
+#     2: {'T1': -17.8462, 'T2': -16.712, 'H': 17.0878, 'price_t': 94.55, 'price_previous': 60.9206, 'Occ1': 1.7097, 'Occ2': -1.4284, 'vent_counter': -14.5423, 'low_override_r1': 10.304, 'low_override_r2': 16.7219, 'intercept': 34.5378},
+#     3: {'T1': -12.4565, 'T2': -10.464, 'H': 20.5213, 'price_t': 76.5996, 'price_previous': 53.3461, 'Occ1': 1.7842, 'Occ2': 0.6308, 'vent_counter': -14.0177, 'low_override_r1': 18.7843, 'low_override_r2': 24.1062, 'intercept': 34.9512},
+#     4: {'T1': -7.7689, 'T2': -9.1995, 'H': 25.1733, 'price_t': 71.1307, 'price_previous': 47.4648, 'Occ1': -1.3999, 'Occ2': -2.4511, 'vent_counter': -5.531, 'low_override_r1': 17.9065, 'low_override_r2': 22.11, 'intercept': 27.4075},
+#     5: {'T1': -10.7988, 'T2': -9.031, 'H': 25.8565, 'price_t': 58.8176, 'price_previous': 43.0421, 'Occ1': -4.0887, 'Occ2': -2.6151, 'vent_counter': 2.2132, 'low_override_r1': 17.9992, 'low_override_r2': 19.7543, 'intercept': 11.6112},
+#     6: {'T1': -12.1684, 'T2': -10.1931, 'H': 17.439, 'price_t': 45.3847, 'price_previous': 33.2699, 'Occ1': -2.407, 'Occ2': 0.0989, 'vent_counter': 4.8596, 'low_override_r1': 14.7093, 'low_override_r2': 17.8049, 'intercept': 1.5964},
+#     7: {'T1': -12.2613, 'T2': -11.4534, 'H': 12.7152, 'price_t': 33.5577, 'price_previous': 22.9294, 'Occ1': 3.7094, 'Occ2': 4.1436, 'vent_counter': 0.3337, 'low_override_r1': 17.4723, 'low_override_r2': 18.7128, 'intercept': -8.3538},
+#     8: {'T1': -8.5566, 'T2': -9.4265, 'H': 14.9203, 'price_t': 30.1314, 'price_previous': 20.0247, 'Occ1': 0.7527, 'Occ2': 3.4089, 'vent_counter': 4.6502, 'low_override_r1': 14.0543, 'low_override_r2': 15.5494, 'intercept': -16.3612},
+#     9: {'T1': -1.7524, 'T2': -2.5389, 'H': 5.123, 'price_t': 12.532, 'price_previous': 9.7659, 'Occ1': 1.0408, 'Occ2': -0.2031, 'vent_counter': 3.8551, 'low_override_r1': 13.4865, 'low_override_r2': 14.3706, 'intercept': -8.692},
+# }
 
 # ── Scenario tree construction ─────────────────────────────────────────────
 def build_scenario_tree(state, L, S, K):
