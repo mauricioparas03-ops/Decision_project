@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
-policies = ["dummy", "lookahead", "SP", "multiSP", "hindsight"]
+policies = ["dummy", "lookahead", "SP", "multiSP", "hindsight", "Hybrid_multi_and_adp"]  # List of policy identifiers to load results for
 
 policy_labels = {
     "dummy":     "Dummy",
@@ -11,7 +11,7 @@ policy_labels = {
     "multiSP":   "Multi-Stage SP",
     "hindsight": "Opt. Hindsight",
     "ADP":       "ADP",
-    "hybrid":    "Hybrid",
+    "Hybrid_multi_and_adp":    "Hybrid",
 }
 
 colors = {
@@ -21,7 +21,7 @@ colors = {
     "multiSP":   "#5DCAA5",
     "hindsight": "#639922",
     "ADP":       "#EF9F27",
-    "hybrid":    "#D85A30",
+    "Hybrid_multi_and_adp":    "#D85A30",
 }
 
 results = {}
