@@ -73,7 +73,7 @@ plt.title("Sample Electricity Price Trajectories")
 plt.grid(True, linestyle="--", alpha=0.4)
 #plt.legend(loc="upper right", fontsize=8)
 plt.tight_layout()
-plt.show()
+#plt.show()
 
 import pandas as pd
 

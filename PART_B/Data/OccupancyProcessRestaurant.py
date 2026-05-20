@@ -99,7 +99,7 @@ def plot_trajectories(r1_paths, r2_paths):
     plt.ylabel("Occupancy")
     plt.grid(True)
     plt.tight_layout()
-    plt.show()
+   #plt.show()
 
     # --- Room 2 ---
     plt.figure(figsize=(8,4))
@@ -110,7 +110,7 @@ def plot_trajectories(r1_paths, r2_paths):
     plt.ylabel("Occupancy")
     plt.grid(True)
     plt.tight_layout()
-    plt.show()
+   # plt.show()
 
 
 if __name__ == "__main__":

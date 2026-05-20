@@ -198,25 +198,19 @@ def build_sp_model(state, price_dict_clus, occ_dict_clus, horizon, n_clus, proba
     m.Hinit    = Param(initialize=state['H'])
     m.VentInit = Param(initialize=v_prev)
      # ── Scenario parameters ───────────────────────────────────────────────────
-# Inizializzazione dinamica dell'occupazione
     def occ_init_rule(m, r, t, s):
         if t == 0:
-            # Al tempo presente usiamo l'occupazione REALE dello state
             return float(state['Occ1'] if r == 1 else state['Occ2'])
         else:
-            # Al tempo futuro usiamo il dato del cluster (tornando indietro all'indice relativo)
             return occ_dict_clus[r, t, s]
             
     m.O = Param(m.RTS, rule=occ_init_rule)
 
 
-    # Inizializzazione dinamica dei prezzi
     def price_init_rule(m, t, s):
         if t == 0:
-            # Prezzo REALE attuale
             return float(state['price_t'])
         else:
-            # Prezzo futuro del cluster
             return price_dict_clus[t, s]
             
     m.prices = Param(m.TS, rule=price_init_rule)

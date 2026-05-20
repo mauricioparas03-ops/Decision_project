@@ -56,7 +56,7 @@ for t in range(T_HOURS):
 
 
 # ============================================================================
-# 0. FUNZIONE DI NORMALIZZAZIONE (NUOVA)
+# 0. Normalization Function 
 # ============================================================================
 def get_normalized_features(state):
     """Normalizza gli stati per stabilizzare la regressione lineare"""
@@ -173,13 +173,9 @@ def build_scenario_tree(state, L, S, K):
                 
         tree.append(new_nodes)
     return tree
+
 def vent_counter_expr(n, nodes_map, m, v_prev, U_vent):
-    """
-    Restituisce un'espressione Pyomo lineare per il vent_counter al nodo n.
-    Somma le variabili Vent lungo il percorso verso la root, fino a U_vent passi.
-    
-    Nota: è una somma (non conta solo i consecutivi) per restare lineare.
-    """
+   
     terms = []
     current_id = n
     steps = 0
@@ -193,12 +189,12 @@ def vent_counter_expr(n, nodes_map, m, v_prev, U_vent):
 
         parent_id = nodes_map[current_id]['parent_id']
 
-        if parent_id not in nodes_map:          # il padre è la root
+        if parent_id not in nodes_map:          
             if steps < U_vent:
-                terms.append(m.Vent0)           # variabile simbolica Pyomo
+                terms.append(m.Vent0)           
                 steps += 1
             if steps < U_vent:
-                terms.append(v_prev)            # costante (int 0/1)
+                terms.append(v_prev)            
                 steps += 1
             break
 
@@ -243,7 +239,7 @@ def solve_bellman_equation_milp(state, next_t_weights):
                                         (2, state['T2'], data['temp_OK_threshold'])]:
         ov = state[f'low_override_r{r}']
         if T_init_r >= T_ok_threshold:
-            ov = 0   # override già terminato
+            ov = 0   
         low_override[r] = ov
     for r in [1, 2]:
         T_r = state[f'T{r}']
@@ -251,11 +247,9 @@ def solve_bellman_equation_milp(state, next_t_weights):
             low_override[r] = 0 
     eps = 10e-6
     # ── Node sets ─────────────────────────────────────────────────────────────
-    # Root è sempre il primo nodo del primo stage
+    
     root_id = tree[0][0]['id']
 
-    # 1. Creiamo un dizionario piatto per accesso rapido: id_globale -> dati_nodo
-    # Questo risolve il problema "tree[stage][nid]" che non funzionerebbe
     nodes_map = {
         node['id']: node
         for stage in tree
@@ -263,18 +257,18 @@ def solve_bellman_equation_milp(state, next_t_weights):
         if node['id'] != root_id
     }
 
-    # 2. Definiamo i set usando gli ID globali
+    
     all_node_ids = list(nodes_map.keys())
 
-    # Foglie: nodi che non hanno figli
+    
     leaf_ids = [nid for nid, node in nodes_map.items() if not node['children']]
 
-    # Solo i nodi dopo la root
+    
     non_root_ids = [nid for nid in all_node_ids if nid != root_id]
 
     decision_ids = non_root_ids
 
-    # Set per Pyomo
+    # Set Pyomo
 
     m = ConcreteModel()
 
@@ -397,18 +391,17 @@ def solve_bellman_equation_milp(state, next_t_weights):
     # Dynamics: Child node state = f(Parent state, Parent decision)
     def thermal_dynamics_rule(m, r, n):
         p_id = nodes_map[n]['parent_id']
-        tau_n = node_stage[n]          # stage del nodo corrente
+        tau_n = node_stage[n]          
         r_other = 2 if r == 1 else 1
         t = state["current_time"] + node_stage[p_id]
 
-        if tau_n == 1:  # nodo subito dopo root
+        if tau_n == 1:  
             occ_term = occ1_root if r == 1 else occ2_root
             T_parent = T_init[r]
             T_other_parent = T_init[r_other]
             heat_parent = m.Heat0[r]
             vent_parent = m.Vent0
         else:
-            # per gli altri stage usa occupazione del parent (o del nodo, se preferisci)
             occ_term = m.O1[p_id] if r == 1 else m.O2[p_id]
             T_parent = m.T_in[r, p_id]
             T_other_parent = m.T_in[r_other, p_id]
@@ -427,13 +420,12 @@ def solve_bellman_equation_milp(state, next_t_weights):
 
     def humidity_dynamics_rule(m, n):        
         p_id = nodes_map[n]['parent_id']
-        tau_n = node_stage[n]          # stage del nodo corrente
-        if tau_n == 1:  # nodo subito dopo root
+        tau_n = node_stage[n]          
+        if tau_n == 1:  
             occ_term = occ1_root + occ2_root
             H_parent = H_init
             vent_parent = m.Vent0
         else:
-            # per gli altri stage usa occupazione del parent (o del nodo, se preferisci)
             occ_term = m.O1[p_id] + m.O2[p_id]
             H_parent = m.Hum[p_id]
             vent_parent = m.Vent[p_id]
@@ -528,7 +520,7 @@ def solve_bellman_equation_milp(state, next_t_weights):
         )
         immediate_cost_root = state['price_t'] * (m.Heat0[1] + m.Heat0[2] + m.Pvent * m.Vent0)
         vfa_term = 0.0
-        t_vfa = state["current_time"] + horizon  # Il tempo futuro in cui si trovano le foglie
+        t_vfa = state["current_time"] + horizon  
         
         if next_t_weights is not None and t_vfa in next_t_weights:
             w = next_t_weights[t_vfa]
@@ -537,16 +529,13 @@ def solve_bellman_equation_milp(state, next_t_weights):
                 prob = nodes_map[n]['probability']
                 p_id = nodes_map[n]['parent_id']
                 
-                # Recupero dati esogeni del ramo per la normalizzazione
                 price_t1 = nodes_map[n]['price']
                 price_prev = nodes_map[p_id]['price'] if p_id != root_id else state['price_t']
                 occ1_2 = nodes_map[n]['occupancy1']
                 occ2_2 = nodes_map[n]['occupancy2']
                 
-                # Approssimazione lineare del vent_counter sulla foglia basata sul tempo minimo hardware
                 vc_expr = vent_counter_expr(n, nodes_map, m, v_prev, int(value(m.U_vent)))
 
-                # Equazione VFA lineare normalizzata
                 node_vfa = (
                     w['intercept'] + 
                     w['T1'] * ((m.T_in[1, n] - 22.0) / 8.0) + 
@@ -561,7 +550,6 @@ def solve_bellman_equation_milp(state, next_t_weights):
                     w['Occ2'] * ((occ2_2 - 10.0) / 20.0)
                 )
                 
-                # Somma pesata per la probabilità dello scenario
                 vfa_term += prob * node_vfa
         return immediate_cost_root + running_cost_nodes + vfa_term
     m.obj = Objective(rule=obj_rule, sense=minimize)
@@ -602,7 +590,6 @@ def evaluate_fixed_action(state, action, next_weights):
         elif T2_n >= data['temp_OK_threshold']: ov2_n = 0
         else: ov2_n = state['low_override_r2']
 
-        # MODIFICA: Creazione dello stato futuro simulato per la normalizzazione
         next_state_sim = {
             'T1': T1_n, 
             'T2': T2_n, 
@@ -618,7 +605,7 @@ def evaluate_fixed_action(state, action, next_weights):
         
         norm_feats = get_normalized_features(next_state_sim)
 
-        # Linear approximation (usando le feature normalizzate)
+        # Linear approximation
         vfa_k = (next_weights['intercept'] + 
                  next_weights['T1']*norm_feats['T1'] + 
                  next_weights['T2']*norm_feats['T2'] + 
