@@ -2,10 +2,10 @@ from EnvFunctions import apply_dynamics, check_feasibility
 from policies.dummy_policy import select_action as dummy_action
 #from policies.dummy_policy import select_action
 #from policies.lookahead_policy import select_action
-#from policies.SP_policy import select_action
-#from policies.ADP_policy import select_action
-#from policies.multiSP import select_action
-from policies.Hybrid_multi_and_adp import select_action
+#from policies.Two_Stage import select_action
+#from policies.ADP_policy_17 import select_action
+#from policies.SP_policy_17 import select_action
+from policies.Hybrid_policy_17 import select_action
 
 from Data.v2_SystemCharacteristics import get_fixed_data
 import pandas as pd
