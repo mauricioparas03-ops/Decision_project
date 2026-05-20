@@ -2,7 +2,7 @@
 
 ## How to run
 
-The only file you need to interact with is [Environment.py](Environment.py).
+The only file you need to interact with is [Environment.py](Environment.py). For optimal in hindsight policy run the Optimal_in_Hindsight.py directly
 
 ### 1. Select a policy
 
@@ -43,7 +43,7 @@ The script runs 100 simulated days and saves the results to `outputs/results_<po
 Once you have generated `.npz` files for the policies you want to compare, open [read_results.py](read_results.py) and list them in the `policies` variable at the top:
 
 ```python
-policies = ["dummy", "lookahead", "SP", "multiSP", "hindsight", "Hybrid_multi_and_adp", "ADP"]
+policies = ["dummy", "lookahead", "SP", "multiSP1", "hindsight", "Hybrid_multi_and_adp", "ADP"]
 ```
 
 Then run:

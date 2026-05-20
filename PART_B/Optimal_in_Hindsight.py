@@ -254,8 +254,11 @@ daily_overrule_acts = np.array(daily_overrule_acts, dtype=float)
 daily_energy_kwh = np.array(daily_energy_kwh, dtype=float)
 daily_pw_cost    = np.where(daily_energy_kwh > 0, daily_costs / daily_energy_kwh, 0.0)
 
+outputs_dir = Path(__file__).resolve().parent / "outputs"
+
+
 np.savez(
-    "results_hindsight.npz",
+    outputs_dir / f"results_hindsight.npz",
     daily_costs         = daily_costs,
     daily_vent_hours    = daily_vent_hours,
     daily_overrule_acts = daily_overrule_acts,
