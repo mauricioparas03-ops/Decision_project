@@ -227,7 +227,7 @@ def build_hybrid_model(state):
         T_r = state[f'T{r}']
         if T_r > data['temp_max_comfort_threshold']:
             low_override[r] = 0 
-    eps = 10e-6
+    eps = 10e-7
     # ── Node sets ─────────────────────────────────────────────────────────────
     root_id = tree[0][0]['id']
 

@@ -192,7 +192,7 @@ def build_multisp_model(state, tree, horizon):
         if T_r > DATA["temp_max_comfort_threshold"]:
             low_override[r] = 0
 
-    eps = 1e-5
+    eps = 10e-7
 
     # Flatten the tree into a node id -> node dict for fast lookup. Exclude root
     root_id = tree[0][0]["id"]

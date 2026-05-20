@@ -15,13 +15,13 @@ from Data.v2_SystemCharacteristics import get_fixed_data
 from sklearn.preprocessing import StandardScaler
 
 # HYPERPARAMETERS & SETTINGS
-N_SAMPLES = 120
-K_SCENARIOS = 50
-K_SCENARIOS_BACKWARD = 100
-ITERATIONS_I = 80
+N_SAMPLES = 100
+K_SCENARIOS = 15
+K_SCENARIOS_BACKWARD = 30
+ITERATIONS_I = 20
 T_HOURS = 10
 SWEEPS_J = 6
-BETA = 0.15
+BETA = 0.25
 HORIZON_MULTI = 4    
 N_CLUSTERS    = 3 
 BRANCHING_FACTOR = 100
@@ -245,7 +245,7 @@ def solve_bellman_equation_milp(state, next_t_weights):
         T_r = state[f'T{r}']
         if T_r > data['temp_max_comfort_threshold']:
             low_override[r] = 0 
-    eps = 10e-6
+    eps = 10e-7
     # ── Node sets ─────────────────────────────────────────────────────────────
     
     root_id = tree[0][0]['id']

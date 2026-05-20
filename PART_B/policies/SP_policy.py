@@ -179,7 +179,7 @@ def build_sp_model(state, price_dict_clus, occ_dict_clus, horizon, n_clus, proba
 
     d      = DATA    
     _num_timeslots = int(d['num_timeslots'])
-    eps = 10e-6
+    eps = 10e-7
 
     m = ConcreteModel()
 

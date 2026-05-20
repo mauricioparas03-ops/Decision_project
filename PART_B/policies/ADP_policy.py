@@ -89,7 +89,7 @@ def select_action(state):
     # ==========================================
     # RIGOROUS OVERRIDE LOGIC FOR FUTURE 
     # ==========================================
-    M, eps = 500, 1e-6
+    M, eps = 500, 10e-7
     
     # Room 1
     m.y_low_r1_next = Var(domain=Binary)

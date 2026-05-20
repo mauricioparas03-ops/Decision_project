@@ -113,7 +113,7 @@ def solve_bellman_equation_milp(state, next_t_weights):
     expected_future_cost = 0
     tout = data['outdoor_temperature'][int(state['current_time'])]
     M = 500
-    eps = 1e-6
+    eps = 1e-7
     # dynamics constraints
     m.ct1 = Constraint(expr=
         m.T1_next == state['T1'] + data['heat_exchange_coeff']*(state['T2']-state['T1']) +
