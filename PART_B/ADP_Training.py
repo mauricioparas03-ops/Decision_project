@@ -12,13 +12,13 @@ from Data.OccupancyProcessRestaurant import next_occupancy_levels
 from Data.v2_SystemCharacteristics import get_fixed_data
 
 # HYPERPARAMETERS & SETTINGS
-N_SAMPLES = 120
-K_SCENARIOS = 50
-K_SCENARIOS_BACKWARD = 100
-ITERATIONS_I = 80
+N_SAMPLES = 100
+K_SCENARIOS = 15
+K_SCENARIOS_BACKWARD = 30
+ITERATIONS_I = 20
 T_HOURS = 10
 SWEEPS_J = 6
-BETA = 0.15
+BETA = 0.25
 
 data = get_fixed_data()
 feature_cols = [
@@ -113,7 +113,7 @@ def solve_bellman_equation_milp(state, next_t_weights):
     expected_future_cost = 0
     tout = data['outdoor_temperature'][int(state['current_time'])]
     M = 500
-    eps = 10e-6
+    eps = 1e-6
     # dynamics constraints
     m.ct1 = Constraint(expr=
         m.T1_next == state['T1'] + data['heat_exchange_coeff']*(state['T2']-state['T1']) +
@@ -227,7 +227,7 @@ def evaluate_fixed_action(state, action, next_weights):
         
         norm_feats = get_normalized_features(next_state_sim)
 
-        # Linear approximation (usando le feature normalizzate)
+        # Linear approximation 
         vfa_k = (next_weights['intercept'] + 
                  next_weights['T1']*norm_feats['T1'] + 
                  next_weights['T2']*norm_feats['T2'] + 
@@ -302,7 +302,12 @@ for i in range(ITERATIONS_I):
                 Y_targets.append(target_value)
                 norm_feats = get_normalized_features(state_n)
                 X_features.append([norm_feats[feat] for feat in feature_cols])
-                        
+
+            print(f"    t={t}, Y mean={np.mean(Y_targets):.2f}, "
+              f"std={np.std(Y_targets):.2f}, "
+              f"min={np.min(Y_targets):.2f}, "
+              f"max={np.max(Y_targets):.2f}")
+                            
             if len(X_features) > 0:
                 regressor = Ridge(alpha=1.0, fit_intercept=True)
                 regressor.fit(X_features, Y_targets)
