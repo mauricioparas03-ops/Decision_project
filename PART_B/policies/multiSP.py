@@ -112,20 +112,11 @@ def build_scenario_tree(state, L, S, K):
 
             centers = X[medoid_indices]  # centroids in original scale
 
-            # --- Identify worst-case scenario (highest total occupancy) ---
-            occ_totals = np.array(sample_occ1) + np.array(sample_occ2)
-            worst_idx = int(np.argmax(occ_totals))
-
-            worst_is_medoid = worst_idx in medoid_indices
-
-            WORST_CASE_PROB = 0.10
-            scale = 1.0 if worst_is_medoid else (1.0 - WORST_CASE_PROB)
-
             # --- Create new nodes for each cluster center ---
             for k in range(K_eff):
                 # Conditional probability: p(cluster k | parent)
                 conditional_prob = np.sum(labels == k) / n_samples
-                joint_prob = node['probability'] * conditional_prob * scale
+                joint_prob = node['probability'] * conditional_prob 
                 new_node = {
                     "id": global_id_counter,           
                     "price": centers[k][0],
@@ -139,23 +130,6 @@ def build_scenario_tree(state, L, S, K):
 
                 node['children'].append(new_node['id'])  
                 new_nodes.append(new_node)               
-                global_id_counter += 1
-
-                # --- Add worst-case node (only if not already captured by a medoid) ---
-            if not worst_is_medoid:
-                worst_node = {
-                    "id": global_id_counter,
-                    "price": samples_prices[worst_idx],
-                    "price_prev": node['price'],
-                    "occupancy1": sample_occ1[worst_idx],
-                    "occupancy2": sample_occ2[worst_idx],
-                    "probability": node['probability'] * WORST_CASE_PROB,
-                    "parent_id": node['id'],
-                    "children": []
-                }
-
-                node['children'].append(worst_node['id'])
-                new_nodes.append(worst_node)
                 global_id_counter += 1
                 
         tree.append(new_nodes)
