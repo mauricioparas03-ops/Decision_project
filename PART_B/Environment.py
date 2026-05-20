@@ -4,7 +4,7 @@ from policies.multiSP import select_action
 # from policies.dummy_policy import select_action
 # from policies.lookahead_policy import select_action
 # from policies.SP_policy import select_action
-#from policies.multiSP import select_action
+#from policies.ADP_policy import select_action
 from policies.multiSP import select_action
 #from policies.Hybrid_multi_and_adp import select_action
 
